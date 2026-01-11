@@ -41,6 +41,7 @@ func main() {
 
 	server := server.NewServer()
 
+	fmt.Println("server set")
 	// Create a done channel to signal when the shutdown is complete
 	done := make(chan bool, 1)
 
@@ -51,6 +52,7 @@ func main() {
 	if err != nil && err != http.ErrServerClosed {
 		panic(fmt.Sprintf("http server error: %s", err))
 	}
+	fmt.Println("server started")
 
 	// Wait for the graceful shutdown to complete
 	<-done
