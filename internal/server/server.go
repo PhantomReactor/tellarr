@@ -7,13 +7,14 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gotd/td/telegram"
 	_ "github.com/joho/godotenv/autoload"
 	//"tellarr/internal/database"
 )
 
 type Server struct {
-	port int
-
+	port           int
+	telegramClient *telegram.Client
 	//db database.Service
 }
 

@@ -9,6 +9,8 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.33
 )
 
+require github.com/go-chi/httplog/v3 v3.3.0 // indirect
+
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/coder/websocket v1.8.14 // indirect

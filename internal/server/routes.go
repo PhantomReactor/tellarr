@@ -3,14 +3,16 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"tellarr/internal/pkg/models"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-chi/httplog/v3"
+	"github.com/google/uuid"
 	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
@@ -19,7 +21,15 @@ import (
 
 func (s *Server) RegisterRoutes() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	slog.SetLogLoggerLevel(slog.LevelError)
+	r.Use(loggingMiddleware)
+	r.Use(httplog.RequestLogger(logger, &httplog.Options{
+		Level:  slog.LevelInfo,
+		Schema: httplog.SchemaECS.Concise(true),
+	}))
+	r.Use(JSONContentType)
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
@@ -29,122 +39,130 @@ func (s *Server) RegisterRoutes() http.Handler {
 		MaxAge:           300,
 	}))
 
-	r.Get("/", s.HelloWorldHandler)
-
-	r.Post("/add", s.add)
-
-	//r.Get("/health", s.healthHandler)
+	r.Route("/api/telegram", func(r chi.Router) {
+		r.Post("/code", s.RequestCode)
+		r.Post("/verify", s.ValidateCode)
+	})
 
 	return r
 }
 
-func (s *Server) HelloWorldHandler(w http.ResponseWriter, r *http.Request) {
-	resp := make(map[string]string)
-	resp["message"] = "Hello World"
-
-	jsonResp, err := json.Marshal(resp)
-	if err != nil {
-		log.Fatalf("error handling JSON marshal. Err: %v", err)
-	}
-
-	_, _ = w.Write(jsonResp)
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		requestID := r.Header.Get("requestID")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		ctx = context.WithValue(ctx, middleware.RequestIDKey, requestID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
-func (s *Server) add(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("tessst")
+func JSONContentType(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) RequestCode(w http.ResponseWriter, r *http.Request) {
+	var phoneHash string
+	slog.Info("received telegram login request")
 	var telegramUser models.AuthRequest
 	err := json.NewDecoder(r.Body).Decode(&telegramUser)
-	fmt.Println(telegramUser)
 	if err != nil {
-		http.Error(w, "Invalid credentials", http.StatusBadRequest)
+		slog.Error("error while decoding login request", "error", err)
+		models.NewAppResponse(w, "invalid credentials", "", http.StatusBadRequest)
 		return
 	}
 
-	client := telegram.NewClient(telegramUser.AppId, telegramUser.AppHash, telegram.Options{
+	s.telegramClient = telegram.NewClient(telegramUser.AppId, telegramUser.AppHash, telegram.Options{
 		SessionStorage: &session.FileStorage{
 			Path: "session.json",
 		},
 	})
 
-	err = client.Run(context.Background(), func(ctx context.Context) error {
-		status, err := client.Auth().Status(ctx)
+	err = s.telegramClient.Run(context.Background(), func(ctx context.Context) error {
+		status, err := s.telegramClient.Auth().Status(ctx)
 		if err != nil {
 			return err
 		}
+
 		if !status.Authorized {
-			sendCodeRes, sendCodeErr := client.Auth().SendCode(ctx, "phone", auth.SendCodeOptions{})
-			if sendCodeErr != nil {
-				fmt.Printf("This is the error from the send code: %v\n", sendCodeErr)
+			sentCode, err := s.telegramClient.Auth().SendCode(ctx, telegramUser.Phone, auth.SendCodeOptions{})
+			if err != nil {
+				slog.Error("error while sending otp", "error", err)
+				models.NewAppResponse(w, "unable to send failed", "", http.StatusInternalServerError)
+				return err
 			}
-
-			fmt.Printf("Please input the code sent to you...\n")
-			var textCode string
-			fmt.Scan(&textCode)
-			sendCode, _ := sendCodeRes.(*tg.AuthSentCode)
-			authRes, signInErr := client.Auth().SignIn(ctx, "phone", textCode, sendCode.PhoneCodeHash)
-			if signInErr != nil {
-				fmt.Printf("This is the error from the signin: %v\n", signInErr)
-			}
-
-			fmt.Printf("This is the authorization response: %v\n", authRes)
-
-		}
-
-		fmt.Printf("Client is running...\n")
-		api := client.API()
-		dialogs, err := api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
-			OffsetPeer: &tg.InputPeerEmpty{},
-			Limit:      100,
-		})
-		if err != nil {
-			return fmt.Errorf("get dialogs failed: %w", err)
-		}
-
-		// Find your channel in the dialogs
-		dialogsSlice := dialogs.(*tg.MessagesDialogsSlice) // or *tg.MessagesDialogs
-		for _, chat := range dialogsSlice.Chats {
-			if ch, ok := chat.(*tg.Channel); ok {
-				fmt.Printf("Channel: %s, ID: %d, AccessHash: %d\n", ch.Title, ch.ID, ch.AccessHash)
-				// Find the one named "database 1"
-				if ch.Title == "DATABASE 1" {
-					peer := &tg.InputPeerChannel{
-						ChannelID:  ch.ID,
-						AccessHash: ch.AccessHash,
-					}
-					messages, err := api.MessagesSearch(ctx, &tg.MessagesSearchRequest{
-						Peer:   peer,
-						Q:      "Mission impossible",
-						Limit:  10,
-						Filter: &tg.InputMessagesFilterEmpty{},
-					})
-					if err != nil {
-						fmt.Println(err)
-					}
-					res, ok := messages.(*tg.MessagesChannelMessages)
-					if !ok {
-						return fmt.Errorf("unexpected type: %T", messages)
-					}
-					msgs := res.Messages
-					for _, m := range msgs {
-						msg, ok := m.(*tg.Message)
-						if !ok {
-							fmt.Println("error")
-						}
-						fmt.Println(msg.Media.TypeName())
-					}
-					fmt.Println(messages)
-				}
+			if authSentCode, ok := sentCode.(*tg.AuthSentCode); ok {
+				phoneHash = authSentCode.PhoneCodeHash
+				slog.Info(phoneHash)
 			}
 		}
+		slog.Info("telegram client running")
 		return nil
 	})
 	if err != nil {
-		http.Error(w, "Authentication error", http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "successj", http.StatusAccepted)
+	models.NewAppResponse(w, "success", phoneHash, http.StatusAccepted)
 }
 
-// func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
-// 	jsonResp, _ := json.Marshal(s.db.Health())
-// 	_, _ = w.Write(jsonResp)
-// }
+func (s *Server) ValidateCode(w http.ResponseWriter, r *http.Request) {
+
+	var authRequest models.AuthRequest
+	err := json.NewDecoder(r.Body).Decode(&authRequest)
+	if err != nil {
+		slog.Error("json parse error", "error", err)
+		models.NewAppResponse(w, "request parse error", "", http.StatusBadRequest)
+		return
+	}
+
+	err = s.telegramClient.Run(context.Background(), func(ctx context.Context) error {
+		authRes, err := s.telegramClient.Auth().SignIn(ctx, authRequest.Phone, authRequest.Code, authRequest.PhoneHash)
+		if err != nil && err == auth.ErrPasswordAuthNeeded {
+			slog.Error("2FA required", "error", err)
+			models.NewAppResponse(w, "2FA required", "", http.StatusContinue)
+			return err
+		}
+		if err != nil {
+			slog.Error("send code error", "error", err)
+			models.NewAppResponse(w, "invalid code", "", http.StatusBadRequest)
+			return err
+		}
+		slog.Debug(authRes.String())
+		return nil
+	})
+	if err != nil {
+		return
+	}
+	models.NewAppResponse(w, "success", "", http.StatusAccepted)
+
+}
+
+func (s *Server) ValidatePassword(w http.ResponseWriter, r *http.Request) {
+	var authRequest models.AuthRequest
+	err := json.NewDecoder(r.Body).Decode(&authRequest)
+	if err != nil {
+		slog.Error("json parse error", "error", err)
+		models.NewAppResponse(w, "json parse error", "", http.StatusBadRequest)
+		return
+	}
+
+	err = s.telegramClient.Run(context.Background(), func(ctx context.Context) error {
+		authRes, err := s.telegramClient.Auth().Password(ctx, authRequest.Password)
+		if err != nil {
+			slog.Error("invalid password", "error", err)
+			models.NewAppResponse(w, "invalid password", "", http.StatusBadRequest)
+			return err
+		}
+		slog.Debug(authRes.String())
+		return nil
+	})
+	if err != nil {
+		return
+	}
+	models.NewAppResponse(w, "success", "", http.StatusOK)
+}
