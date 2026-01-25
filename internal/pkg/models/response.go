@@ -5,13 +5,20 @@ import (
 	"net/http"
 )
 
-type AppResponse struct {
-	Message   string `json:"message"`
-	PhoneHash string `json:"phoneHash"`
+type Response struct {
+	Message   string `json:"message,omitempty"`
+	PhoneHash string `json:"phoneHash,omitempty"`
 }
 
-func NewAppResponse(w http.ResponseWriter, message string, phoneHash string, status int) {
-	w.Header().Set("Content-Type", "application/json")
+type Result struct {
+	Name string `json:"name,omitempty"`
+	Link string `json:"link,omitempty"`
+}
+
+func NewResponse(w http.ResponseWriter, response any, status int) {
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(AppResponse{Message: message, PhoneHash: phoneHash})
+	if response != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}
 }

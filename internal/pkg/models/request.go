@@ -1,6 +1,6 @@
 package models
 
-type AuthRequest struct {
+type Request struct {
 	AppId      int    `json:"appId"`
 	AppHash    string `json:"appHash"`
 	Code       string `json:"code"`
