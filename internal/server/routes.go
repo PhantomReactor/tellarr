@@ -4,17 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"strconv"
+	"tellarr/internal/database"
+	db "tellarr/internal/database/models"
+	"tellarr/internal/pkg/models"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httplog/v3"
 	"github.com/google/uuid"
+	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
-	"log/slog"
-	"net/http"
-	"os"
-	"tellarr/internal/pkg/models"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -40,8 +46,9 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.Route("/api/telegram", func(r chi.Router) {
 		r.Post("/code", s.RequestCode)
 		r.Post("/verify", s.ValidateCode)
-		r.Post("/add-channel", s.AddChannels)
-		r.Post("/search", s.Search)
+		r.Post("/channels", s.AddChannels)
+		r.Get("/channels", s.ListChannels)
+		r.Get("/messages", s.Search)
 	})
 
 	return r
@@ -67,7 +74,6 @@ func JSONContentType(next http.Handler) http.Handler {
 }
 
 func (s *Server) RequestCode(w http.ResponseWriter, r *http.Request) {
-	var phoneHash string
 	slog.Info("received telegram login request")
 	var request models.Request
 	err := json.NewDecoder(r.Body).Decode(&request)
@@ -76,8 +82,20 @@ func (s *Server) RequestCode(w http.ResponseWriter, r *http.Request) {
 		models.NewResponse(w, &models.Response{Message: "invalid credentials"}, http.StatusBadRequest)
 		return
 	}
-
-	status, err := s.telegramClient.Auth().Status(s.telegramCtx)
+	t, err := s.getTelegramClient(request.SessionId)
+	if err != nil {
+		slog.Error("error while starting telegram client", "error", err)
+		models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
+		return
+	}
+	sessionRepo := s.sessionRepo
+	sessionId, err := sessionRepo.CreateSession(db.Session{PhoneNumber: request.Phone, Active: true, CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	if err != nil {
+		slog.Error("error while creating session", "error", err)
+		models.NewResponse(w, &models.Response{Message: "error while creating sessions"}, http.StatusInternalServerError)
+		return
+	}
+	status, err := t.client.Auth().Status(t.context)
 	if err != nil {
 		slog.Error(err.Error())
 		models.NewResponse(w, &models.Response{Message: "auth error"}, http.StatusInternalServerError)
@@ -85,19 +103,77 @@ func (s *Server) RequestCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !status.Authorized {
-		sentCode, err := s.telegramClient.Auth().SendCode(s.telegramCtx, request.Phone, auth.SendCodeOptions{})
+		sentCode, err := t.client.Auth().SendCode(t.context, request.Phone, auth.SendCodeOptions{})
 		if err != nil {
 			slog.Error("error while sending otp", "error", err)
 			models.NewResponse(w, &models.Response{Message: "unable to send failed"}, http.StatusInternalServerError)
 			return
 		}
 		if authSentCode, ok := sentCode.(*tg.AuthSentCode); ok {
-			phoneHash = authSentCode.PhoneCodeHash
-			slog.Debug(phoneHash)
+			t.phoneCodeHash = authSentCode.PhoneCodeHash
+			slog.Debug(t.phoneCodeHash)
 		}
 	}
 	slog.Info("telegram client running")
-	models.NewResponse(w, &models.Response{PhoneHash: phoneHash}, http.StatusAccepted)
+	models.NewResponse(w, &models.Response{SessionId: sessionId}, http.StatusAccepted)
+}
+
+func (s *Server) getTelegramClient(sessionId int) (*TelegramSession, error) {
+	s.mu.RLock()
+	if session, exisit := s.telegramSessions[sessionId]; exisit {
+		s.mu.RUnlock()
+		<-session.ready
+		return session, nil
+	}
+	s.mu.RUnlock()
+	s.mu.Lock()
+
+	if session, exisit := s.telegramSessions[sessionId]; exisit {
+		s.mu.Unlock()
+		<-session.ready
+		return session, nil
+	}
+	started := make(chan struct{})
+	session := &TelegramSession{ready: started}
+	s.telegramSessions[sessionId] = session
+	s.mu.Unlock()
+	telegramClient := telegram.NewClient(s.appId, s.appHash, telegram.Options{
+		SessionStorage: &database.DBSessionStorage{
+			SessionRepository: s.sessionRepo,
+			SessionID:         sessionId,
+		},
+	})
+	go func() {
+		err := telegramClient.Run(context.Background(), func(ctx context.Context) error {
+			session.client = telegramClient
+			session.context = ctx
+			close(started)
+			fmt.Println("telegram client running")
+			<-ctx.Done()
+			fmt.Println("telegram client stopped")
+			return nil
+		})
+		if err != nil {
+			slog.Error("failed to start telegram session", "sessionId", sessionId, "err", err)
+			session.err = err
+			close(started)
+			return
+		}
+	}()
+	select {
+	case <-started:
+		if session.err != nil {
+			return nil, session.err
+		}
+	case <-time.After(5 * time.Second):
+		slog.Error("failed to start telegram session", "sessionId", sessionId)
+		s.mu.Lock()
+		delete(s.telegramSessions, sessionId)
+		s.mu.Unlock()
+		return nil, fmt.Errorf("failed to start telegram sesion for %d", sessionId)
+	}
+	return session, nil
+
 }
 
 func (s *Server) ValidateCode(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +185,13 @@ func (s *Server) ValidateCode(w http.ResponseWriter, r *http.Request) {
 		models.NewResponse(w, &models.Response{Message: "request parse error"}, http.StatusBadRequest)
 		return
 	}
-	authRes, err := s.telegramClient.Auth().SignIn(s.telegramCtx, request.Phone, request.Code, request.PhoneHash)
+	t, err := s.getTelegramClient(request.SessionId)
+	if err != nil {
+		slog.Error("error while starting telegram client", "error", err)
+		models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
+		return
+	}
+	authRes, err := t.client.Auth().SignIn(t.context, request.Phone, request.Code, request.PhoneHash)
 	if err != nil && err == auth.ErrPasswordAuthNeeded {
 		slog.Error("2FA required", "error", err)
 		models.NewResponse(w, &models.Response{Message: "2FA required"}, http.StatusContinue)
@@ -133,7 +215,8 @@ func (s *Server) ValidatePassword(w http.ResponseWriter, r *http.Request) {
 		models.NewResponse(w, &models.Response{Message: "json parse error"}, http.StatusBadRequest)
 		return
 	}
-	authRes, err := s.telegramClient.Auth().Password(s.telegramCtx, request.Password)
+	t := s.telegramSessions[request.SessionId]
+	authRes, err := t.client.Auth().Password(t.context, request.Password)
 	if err != nil {
 		slog.Error("invalid password", "error", err)
 		models.NewResponse(w, &models.Response{Message: "invalid password"}, http.StatusBadRequest)
@@ -143,11 +226,33 @@ func (s *Server) ValidatePassword(w http.ResponseWriter, r *http.Request) {
 	models.NewResponse(w, &models.Response{Message: "success"}, http.StatusOK)
 }
 
+func (s *Server) ListChannels(w http.ResponseWriter, r *http.Request) {
+	var channels []models.DialogInfo
+	t := s.telegramSessions[1]
+	api := t.client.API()
+	dialogs, err := api.MessagesGetDialogs(t.context, &tg.MessagesGetDialogsRequest{
+		OffsetPeer: &tg.InputPeerEmpty{},
+	})
+	if err != nil {
+		slog.Error(err.Error())
+		models.NewResponse(w, &models.Response{Message: "unable to load channels"}, http.StatusInternalServerError)
+		return
+	}
+	dialogSlice := dialogs.(*tg.MessagesDialogsSlice)
+	for _, dialog := range dialogSlice.Chats {
+		if channel, ok := dialog.(*tg.Channel); ok {
+			channels = append(channels, models.DialogInfo{Name: channel.Title, Id: channel.ID, AccessHash: channel.AccessHash})
+		}
+	}
+	models.NewResponse(w, channels, http.StatusOK)
+}
+
 func (s *Server) AddChannels(w http.ResponseWriter, r *http.Request) {
 	var request models.Request
 	json.NewDecoder(r.Body).Decode(&request)
-	api := s.telegramClient.API()
-	dialogs, err := api.MessagesGetDialogs(s.telegramCtx, &tg.MessagesGetDialogsRequest{
+	t := s.telegramSessions[request.SessionId]
+	api := t.client.API()
+	dialogs, err := api.MessagesGetDialogs(t.context, &tg.MessagesGetDialogsRequest{
 		OffsetPeer: &tg.InputPeerEmpty{},
 		Limit:      20,
 	})
@@ -163,7 +268,6 @@ func (s *Server) AddChannels(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			slog.Info("channel info", "channelId", ch.ID, "accessHash", ch.AccessHash)
-			fmt.Println(ch.ID, ch.AccessHash)
 			break
 		}
 	}
@@ -171,15 +275,27 @@ func (s *Server) AddChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
-	var request models.Request
-	json.NewDecoder(r.Body).Decode(&request)
-	api := s.telegramClient.API()
-	messages, err := api.MessagesSearch(s.telegramCtx, &tg.MessagesSearchRequest{
+	channelId, err := strconv.ParseInt(r.URL.Query().Get("channelId"), 10, 64)
+	if err != nil {
+		slog.Error("unable to decode channelId", "error", err)
+		models.NewResponse(w, &models.Response{Message: "unable to decode channelId"}, http.StatusInternalServerError)
+		return
+	}
+	accessHash, err := strconv.ParseInt(r.URL.Query().Get("accessHash"), 10, 64)
+	if err != nil {
+		slog.Error("unable to decode accessHash", "error", err)
+		models.NewResponse(w, &models.Response{Message: "unable to decode accessHash"}, http.StatusInternalServerError)
+		return
+	}
+	query := r.URL.Query().Get("query")
+	t := s.telegramSessions[1]
+	api := t.client.API()
+	messages, err := api.MessagesSearch(t.context, &tg.MessagesSearchRequest{
 		Peer: &tg.InputPeerChannel{
-			ChannelID:  request.ChannelID,
-			AccessHash: request.AccessHash,
+			ChannelID:  channelId,
+			AccessHash: accessHash,
 		},
-		Q:      request.Code,
+		Q:      query,
 		Limit:  10,
 		Filter: &tg.InputMessagesFilterEmpty{},
 	})
@@ -195,7 +311,7 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msgs := res.Messages
-	var results []models.Result
+	var results []models.MediaInfo
 	for _, m := range msgs {
 		msg, ok := m.(*tg.Message)
 		messageId := msg.GetID()
@@ -221,7 +337,7 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if isVideo {
-			results = append(results, models.Result{Name: filename, Link: fmt.Sprintf("https://t.me/c/%d/%d", request.ChannelID, messageId)})
+			results = append(results, models.MediaInfo{Name: filename, Link: fmt.Sprintf("https://t.me/c/%d/%d", channelId, messageId)})
 		}
 	}
 	models.NewResponse(w, results, http.StatusOK)

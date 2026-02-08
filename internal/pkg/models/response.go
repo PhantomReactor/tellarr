@@ -7,12 +7,18 @@ import (
 
 type Response struct {
 	Message   string `json:"message,omitempty"`
-	PhoneHash string `json:"phoneHash,omitempty"`
+	SessionId int64  `json:"sessionId,omitempty"`
 }
 
-type Result struct {
+type MediaInfo struct {
 	Name string `json:"name,omitempty"`
 	Link string `json:"link,omitempty"`
+}
+
+type DialogInfo struct {
+	Name       string `json:"name,omitempty"`
+	Id         int64  `json:"id,omitempty"`
+	AccessHash int64  `json:"accessHash,omitempty"`
 }
 
 func NewResponse(w http.ResponseWriter, response any, status int) {

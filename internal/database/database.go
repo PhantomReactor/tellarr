@@ -2,66 +2,72 @@ package database
 
 import (
 	"context"
-	"database/sql"
+	"embed"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pressly/goose/v3"
 )
 
-// Service represents a service that interacts with a database.
-type Service interface {
-	// Health returns a map of health status information.
-	// The keys and values in the map are service-specific.
-	Health() map[string]string
+//go:embed migrations/*.sql
+var embedMigrations embed.FS
 
-	// Close terminates the database connection.
-	// It returns an error if the connection cannot be closed.
-	Close() error
-}
+// // Service represents a service that interacts with a database.
+// type Service interface {
+// 	// Health returns a map of health status information.
+// 	// The keys and values in the map are service-specific.
+// 	Health() map[string]string
+//
+// 	// Close terminates the database connection.
+// 	// It returns an error if the connection cannot be closed.
+// 	Close() error
+// }
 
-type service struct {
-	db *sql.DB
+type Service struct {
+	DB *sqlx.DB
 }
 
 var (
-	dburl      = os.Getenv("BLUEPRINT_DB_URL")
-	dbInstance *service
+	dburl      = os.Getenv("DB_URL")
+	dbInstance *Service
 )
 
 func New() Service {
 	// Reuse Connection
 	if dbInstance != nil {
-		return dbInstance
+		return *dbInstance
 	}
 
-	db, err := sql.Open("sqlite3", dburl)
+	db, err := sqlx.Open("sqlite3", dburl)
 	if err != nil {
 		// This will not be a connection error, but a DSN parse error or
 		// another initialization error.
 		log.Fatal(err)
 	}
+	runMigrations(db)
 
-	dbInstance = &service{
-		db: db,
+	dbInstance = &Service{
+		DB: db,
 	}
-	return dbInstance
+	return *dbInstance
 }
 
 // Health checks the health of the database connection by pinging the database.
 // It returns a map with keys indicating various health statistics.
-func (s *service) Health() map[string]string {
+func (s *Service) Health() map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	stats := make(map[string]string)
 
 	// Ping the database
-	err := s.db.PingContext(ctx)
+	err := s.DB.PingContext(ctx)
 	if err != nil {
 		stats["status"] = "down"
 		stats["error"] = fmt.Sprintf("db down: %v", err)
@@ -74,7 +80,7 @@ func (s *service) Health() map[string]string {
 	stats["message"] = "It's healthy"
 
 	// Get database stats (like open connections, in use, idle, etc.)
-	dbStats := s.db.Stats()
+	dbStats := s.DB.Stats()
 	stats["open_connections"] = strconv.Itoa(dbStats.OpenConnections)
 	stats["in_use"] = strconv.Itoa(dbStats.InUse)
 	stats["idle"] = strconv.Itoa(dbStats.Idle)
@@ -107,7 +113,21 @@ func (s *service) Health() map[string]string {
 // It logs a message indicating the disconnection from the specific database.
 // If the connection is successfully closed, it returns nil.
 // If an error occurs while closing the connection, it returns the error.
-func (s *service) Close() error {
+func (s *Service) Close() error {
 	log.Printf("Disconnected from database: %s", dburl)
-	return s.db.Close()
+	return s.DB.Close()
+}
+
+func runMigrations(db *sqlx.DB) {
+	fmt.Println("migrations started")
+	goose.SetBaseFS(embedMigrations)
+
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		panic(fmt.Errorf("failed to set dialect %w", err))
+	}
+
+	if err := goose.Up(db.DB, "migrations"); err != nil {
+		panic(fmt.Errorf("failed to run migrations %w", err))
+	}
+	fmt.Println("migrations completed")
 }

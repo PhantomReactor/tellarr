@@ -1,6 +1,7 @@
 package models
 
 type Request struct {
+	SessionId  int    `json:"sessionId"`
 	AppId      int    `json:"appId"`
 	AppHash    string `json:"appHash"`
 	Code       string `json:"code"`

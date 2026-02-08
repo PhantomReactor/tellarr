@@ -1,5 +1,21 @@
 # Simple Makefile for a Go project
 
+MIGRATIONS_DIR=internal/database/migrations
+DB_URL=./data/tellarr.db
+
+migrate-up:
+	goose -dir $(MIGRATIONS_DIR) sqlite3 $(DB_URL) up
+
+migrate-down:
+	goose -dir $(MIGRATIONS_DIR) sqlite3 $(DB_URL) down
+
+migrate-status:
+	goose -dir $(MIGRATIONS_DIR) sqlite3 $(DB_URL) status
+
+migrate-create:
+	@read -p "Migration name: " name; \
+	goose -dir $(MIGRATIONS_DIR) create $$name sql
+	
 # Build the application
 all: build test
 
@@ -40,4 +56,5 @@ watch:
             fi; \
         fi
 
-.PHONY: all build run test clean watch
+.PHONY: all build run test clean watch migrate-up migrate-down migrate-status migrate-create
+
