@@ -215,7 +215,12 @@ func (s *Server) ValidatePassword(w http.ResponseWriter, r *http.Request) {
 		models.NewResponse(w, &models.Response{Message: "json parse error"}, http.StatusBadRequest)
 		return
 	}
-	t := s.telegramSessions[request.SessionId]
+	t, err := s.getTelegramClient(request.SessionId)
+	if err != nil {
+		slog.Error("error while starting telegram client", "error", err)
+		models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
+		return
+	}
 	authRes, err := t.client.Auth().Password(t.context, request.Password)
 	if err != nil {
 		slog.Error("invalid password", "error", err)
@@ -228,20 +233,28 @@ func (s *Server) ValidatePassword(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ListChannels(w http.ResponseWriter, r *http.Request) {
 	var channels []models.DialogInfo
-	t := s.telegramSessions[1]
-	api := t.client.API()
-	dialogs, err := api.MessagesGetDialogs(t.context, &tg.MessagesGetDialogsRequest{
-		OffsetPeer: &tg.InputPeerEmpty{},
-	})
-	if err != nil {
-		slog.Error(err.Error())
-		models.NewResponse(w, &models.Response{Message: "unable to load channels"}, http.StatusInternalServerError)
-		return
-	}
-	dialogSlice := dialogs.(*tg.MessagesDialogsSlice)
-	for _, dialog := range dialogSlice.Chats {
-		if channel, ok := dialog.(*tg.Channel); ok {
-			channels = append(channels, models.DialogInfo{Name: channel.Title, Id: channel.ID, AccessHash: channel.AccessHash})
+	for sessionId := range s.telegramSessions {
+		t, err := s.getTelegramClient(sessionId)
+		if err != nil {
+			slog.Error("error while starting telegram client", "error", err)
+			models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
+			return
+		}
+
+		api := t.client.API()
+		dialogs, err := api.MessagesGetDialogs(t.context, &tg.MessagesGetDialogsRequest{
+			OffsetPeer: &tg.InputPeerEmpty{},
+		})
+		if err != nil {
+			slog.Error(err.Error())
+			models.NewResponse(w, &models.Response{Message: "unable to load channels"}, http.StatusInternalServerError)
+			return
+		}
+		dialogSlice := dialogs.(*tg.MessagesDialogsSlice)
+		for _, dialog := range dialogSlice.Chats {
+			if channel, ok := dialog.(*tg.Channel); ok {
+				channels = append(channels, models.DialogInfo{Name: channel.Title, Id: channel.ID, AccessHash: channel.AccessHash})
+			}
 		}
 	}
 	models.NewResponse(w, channels, http.StatusOK)
