@@ -21,6 +21,12 @@ type DialogInfo struct {
 	AccessHash int64  `json:"accessHash,omitempty"`
 }
 
+type DownloadInfo struct {
+	Name    string  `json:"name,omitempty"`
+	Id      string  `json:"id,omitempty"`
+	Percent float64 `json:"percent,omitempty"`
+}
+
 func NewResponse(w http.ResponseWriter, response any, status int) {
 	w.WriteHeader(status)
 	if response != nil {

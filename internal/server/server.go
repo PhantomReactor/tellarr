@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,23 +18,25 @@ import (
 type Server struct {
 	port             int
 	db               database.Service
-	telegramSessions map[int]*TelegramSession
+	telegramSessions map[int64]*TelegramSession
 	sessionRepo      database.SessionRepository
+	dialogRepo       database.DialogsRepository
+	dm               DownloadManager
 	appId            int
 	appHash          string
 	mu               sync.RWMutex
 }
 
 type TelegramSession struct {
-	mu            sync.RWMutex
-	context       context.Context
-	client        *telegram.Client
-	phoneCodeHash string
-	ready         chan struct{}
-	err           error
+	mu      sync.RWMutex
+	context context.Context
+	client  *telegram.Client
+	ready   chan struct{}
+	err     error
 }
 
 func NewServer() *http.Server {
+	slog.Info("starting server")
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	appId, _ := strconv.Atoi(os.Getenv("APP_ID"))
 	appHash := os.Getenv("APP_HASH")
@@ -44,7 +47,7 @@ func NewServer() *http.Server {
 	if err != nil {
 		fmt.Println("ignoring exisiting sessions")
 	}
-	telegramSessions := make(map[int]*TelegramSession)
+	telegramSessions := make(map[int64]*TelegramSession)
 
 	for _, sessionId := range sessionIds {
 		telegramClient := telegram.NewClient(appId, appHash, telegram.Options{
@@ -61,6 +64,8 @@ func NewServer() *http.Server {
 		telegramSessions: telegramSessions,
 		db:               db,
 		sessionRepo:      sessionRepo,
+		dialogRepo:       database.NewDialogsRepository(db.DB),
+		dm:               NewDownloadManger(),
 		appId:            appId,
 		appHash:          appHash,
 	}
@@ -74,6 +79,7 @@ func NewServer() *http.Server {
 				s.mu.Lock()
 				s.context = ctx
 				s.mu.Unlock()
+				s.ready = started
 				close(started)
 				fmt.Println("telegram client running")
 				<-ctx.Done()

@@ -7,7 +7,7 @@ import (
 
 type DBSessionStorage struct {
 	SessionRepository SessionRepository
-	SessionID         int
+	SessionID         int64
 }
 
 func (d *DBSessionStorage) LoadSession(_ context.Context) ([]byte, error) {

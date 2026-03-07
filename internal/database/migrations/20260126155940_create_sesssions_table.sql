@@ -1,15 +1,16 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE SESSIONS (
+CREATE TABLE IF NOT EXISTS SESSIONS (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone_number INTEGER NOT NULL, 
+    phone_number TEXT NOT NULL, 
+    phone_code_hash TEXT,
     token TEXT,
     active BOOLEAN NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_id ON SESSIONS(id);
+CREATE INDEX IF NOT EXISTS idx_id ON SESSIONS(id);
 -- +goose StatementEnd
 
 -- +goose Down

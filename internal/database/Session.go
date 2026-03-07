@@ -33,7 +33,7 @@ func (s *SessionRepository) UpdateSession(session models.Session) error {
 	return nil
 }
 
-func (s *SessionRepository) GetSession(id int, phoneNumber string) (*models.Session, error) {
+func (s *SessionRepository) GetSession(id int64, phoneNumber string) (*models.Session, error) {
 	var session models.Session
 	if phoneNumber == "" && id == 0 {
 		return nil, fmt.Errorf("id or phoneNumber rquired")
@@ -47,8 +47,8 @@ func (s *SessionRepository) GetSession(id int, phoneNumber string) (*models.Sess
 
 }
 
-func (s *SessionRepository) GetAllSessionIds() ([]int, error) {
-	var sessions []int
+func (s *SessionRepository) GetAllSessionIds() ([]int64, error) {
+	var sessions []int64
 	err := s.db.Select(&sessions, "select id from sessions where active = true")
 	if err != nil {
 		return nil, err
@@ -56,17 +56,22 @@ func (s *SessionRepository) GetAllSessionIds() ([]int, error) {
 	return sessions, nil
 }
 
-func (s *SessionRepository) InactiveSession(id int) error {
+func (s *SessionRepository) InactiveSession(id int64) error {
 	_, err := s.db.Exec("update sessions set active = false where id = ?", id)
 	return err
 }
 
-func (s *SessionRepository) DeleteSession(id int) error {
+func (s *SessionRepository) DeleteSession(id int64) error {
 	_, err := s.db.Exec("delete sessions where id = ?", id)
 	return err
 }
 
-func (s *SessionRepository) UpdateToken(id int, token string) error {
-	_, err := s.db.Exec("update session set token = ? where id = ?", id, token)
+func (s *SessionRepository) UpdateToken(id int64, token string) error {
+	_, err := s.db.Exec("update sessions set token = ? where id = ?", token, id)
+	return err
+}
+
+func (s *SessionRepository) UpdatePhoneCodeHash(id int64, phoneCodeHash string) error {
+	_, err := s.db.Exec("update sessions set phone_code_hash = ? where id = ?", phoneCodeHash, id)
 	return err
 }

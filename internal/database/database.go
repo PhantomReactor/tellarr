@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -43,7 +44,9 @@ func New() Service {
 	if dbInstance != nil {
 		return *dbInstance
 	}
-
+	if err := os.MkdirAll(filepath.Dir(dburl), 0755); err != nil {
+		log.Fatal(err)
+	}
 	db, err := sqlx.Open("sqlite3", dburl)
 	if err != nil {
 		// This will not be a connection error, but a DSN parse error or

@@ -1,6 +1,6 @@
 # Simple Makefile for a Go project
 
-MIGRATIONS_DIR=internal/database/migrations
+MIGRATIONS_DIR=./internal/database/migrations
 DB_URL=./data/tellarr.db
 
 migrate-up:
