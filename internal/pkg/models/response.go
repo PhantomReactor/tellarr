@@ -27,6 +27,14 @@ type DownloadInfo struct {
 	Percent float64 `json:"percent,omitempty"`
 }
 
+type AuthResponse struct {
+	Id           int64  `json:"id,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Token        string `json:"token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int64  `json:"expires_in,omitempty"`
+}
+
 func NewResponse(w http.ResponseWriter, response any, status int) {
 	w.WriteHeader(status)
 	if response != nil {

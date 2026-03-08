@@ -13,3 +13,11 @@ type Request struct {
 	DialogName   string `json:"dialogName"`
 	DownloadLink string `json:"downloadLink"`
 }
+
+type UserRequest struct {
+	UserId          int64  `json:"userId"`
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	CurrentPassword string `json:"currentPassword"`
+	Token           string `json:"token"`
+}

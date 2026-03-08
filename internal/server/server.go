@@ -21,6 +21,8 @@ type Server struct {
 	telegramSessions map[int64]*TelegramSession
 	sessionRepo      database.SessionRepository
 	dialogRepo       database.DialogsRepository
+	userRepo         database.UserRepository
+	refreshTokenRepo database.RefreshTokenRepository
 	dm               DownloadManager
 	appId            int
 	appHash          string
