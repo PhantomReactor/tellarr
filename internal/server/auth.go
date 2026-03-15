@@ -6,14 +6,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"os"
 	"strings"
 	db "tellarr/internal/database/models"
+	"tellarr/internal/pkg/enums"
 	"tellarr/internal/pkg/models"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Claims struct {
@@ -85,9 +87,9 @@ func (s *Server) findUser(username string, id int64) (*db.User, error) {
 func (s *Server) deleteRefreshToken(id int64, userId int64) error {
 	var err error
 	if id != 0 {
-		err = s.refreshTokenRepo.Delete(id)
+		err = s.tokenRepo.Delete(id)
 	} else {
-		err = s.refreshTokenRepo.DeleteByUserId(userId)
+		err = s.tokenRepo.DeleteByUserId(userId, enums.Refresh)
 	}
 	if err != nil {
 		return err
@@ -109,19 +111,19 @@ func generateToken(u *db.User) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-func (s *Server) generateRefreshToken(userId int64) (*db.RefreshToken, error) {
+func (s *Server) generateRefreshToken(userId int64) (*db.Token, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	rt := &db.RefreshToken{
+	rt := &db.Token{
 		Token:     hex.EncodeToString(b),
 		UserId:    userId,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	id, err := s.refreshTokenRepo.CreateRefreshToken(rt)
+	id, err := s.tokenRepo.CreateToken(rt)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +131,8 @@ func (s *Server) generateRefreshToken(userId int64) (*db.RefreshToken, error) {
 	return rt, nil
 }
 
-func (s *Server) validateRefreshToken(userId int64, token string) (*db.RefreshToken, error) {
-	rt, err := s.refreshTokenRepo.GetRefreshToken(userId)
+func (s *Server) validateRefreshToken(userId int64, token string) (*db.Token, error) {
+	rt, err := s.tokenRepo.GetToken(userId, "refresh")
 	if err != nil {
 		return nil, err
 	}

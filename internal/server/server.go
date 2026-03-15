@@ -22,7 +22,7 @@ type Server struct {
 	sessionRepo      database.SessionRepository
 	dialogRepo       database.DialogsRepository
 	userRepo         database.UserRepository
-	refreshTokenRepo database.RefreshTokenRepository
+	tokenRepo        database.TokenRepository
 	dm               DownloadManager
 	appId            int
 	appHash          string

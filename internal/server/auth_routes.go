@@ -1,12 +1,18 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	db "tellarr/internal/database/models"
+	"tellarr/internal/pkg/enums"
 	"tellarr/internal/pkg/models"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -24,6 +30,106 @@ func (s *Server) RegisterAuthRouts(r chi.Router) {
 			r.Post("/reset", s.HandleReset)
 		})
 	})
+
+	r.Route("/api/tokens", func(r chi.Router) {
+		r.Use(JWTAuth)
+		r.Post("/", s.HandleCreateToken)
+		r.Get("/", s.HandleGetTokens)
+		r.Get("/:tokenId", s.HandleGetToken)
+		r.Delete("/:tokenId", nil)
+	})
+}
+
+func (s *Server) HandleCreateToken(w http.ResponseWriter, r *http.Request) {
+	var req models.UserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		slog.Error("unable to decode request", "error", err)
+		models.NewResponse(w, models.Response{Message: "unable to decode request"}, http.StatusInternalServerError)
+		return
+	}
+
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		slog.Error("error while generating api token", "error", err)
+		models.NewResponse(w, models.Response{Message: "unablt to process request"}, http.StatusInternalServerError)
+		return
+	}
+
+	token := db.Token{
+		UserId:    req.UserId,
+		Token:     hex.EncodeToString(b),
+		Type:      enums.API,
+		ExpiresAt: time.Now().AddDate(100, 0, 0),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	id, err := s.tokenRepo.CreateToken(&token)
+	if err != nil {
+		slog.Error("error while generating api token", "error", err)
+		models.NewResponse(w, models.Response{Message: "unablt to process request"}, http.StatusInternalServerError)
+		return
+	}
+	models.NewResponse(w, models.AuthResponse{Id: id, Token: token.Token}, http.StatusOK)
+}
+
+func (s *Server) HandleGetTokens(w http.ResponseWriter, r *http.Request) {
+	var res []models.AuthResponse
+	tokens, err := s.tokenRepo.GetTokensByTokenType(enums.API)
+	if err != nil {
+		slog.Error("error while getting tokens", "error", err)
+		models.NewResponse(w, models.Response{Message: "unablt to process request"}, http.StatusInternalServerError)
+		return
+	}
+	for _, token := range *tokens {
+		res = append(res, models.AuthResponse{Id: token.ID, Token: token.Token})
+	}
+	models.NewResponse(w, res, http.StatusOK)
+}
+
+func (s *Server) HandleGetToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("tokenId"), 10, 0)
+	if err != nil {
+		slog.Error("unable to decode tokenId", "error", err)
+		models.NewResponse(w, models.Response{Message: "unable to decode tokenId"}, http.StatusBadRequest)
+		return
+
+	}
+	if id != 0 {
+		slog.Error("tokenId is missing")
+		models.NewResponse(w, models.Response{Message: "tokenId is required"}, http.StatusBadRequest)
+		return
+	}
+
+	token, err := s.tokenRepo.GetTokenById(id, enums.API)
+	if err != nil {
+		slog.Error(fmt.Sprintf("error while fetching token for %s", id), "error", err)
+		models.NewResponse(w, models.Response{Message: "error while fetching token"}, http.StatusInternalServerError)
+		return
+	}
+	models.NewResponse(w, models.AuthResponse{Id: id, Token: token.Token}, http.StatusOK)
+}
+
+func (s *Server) HandleDeleteToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("tokenId"), 10, 0)
+	if err != nil {
+		slog.Error("unable to decode tokenId", "error", err)
+		models.NewResponse(w, models.Response{Message: "unable to decode tokenId"}, http.StatusBadRequest)
+		return
+
+	}
+	if id != 0 {
+		slog.Error("tokenId is missing")
+		models.NewResponse(w, models.Response{Message: "tokenId is required"}, http.StatusBadRequest)
+		return
+	}
+
+	err = s.tokenRepo.Delete(id)
+	if err != nil {
+		slog.Error(fmt.Sprintf("error while fetching token for %s", id), "error", err)
+		models.NewResponse(w, models.Response{Message: "error while fetching token"}, http.StatusInternalServerError)
+		return
+	}
+	models.NewResponse(w, nil, http.StatusOK)
 }
 
 func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
