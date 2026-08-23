@@ -1,0 +1,25 @@
+services:
+  tellarr:
+    build: .
+    image: tellarr:latest
+    container_name: tellarr
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    env_file:
+      - .env
+    extra_hosts:
+      # lets .env use http://host.docker.internal:<port> to reach your own
+      # aria2c / qBittorrent / Prowlarr running on the docker host
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+
+# All configuration lives in .env next to this file (compose also uses it for
+# ${PORT} substitution above). For Docker make sure .env contains:
+#
+#   DB_URL=/data/tellarr.db
+#   DOWNLOAD_DIR=/data/downloads
+#   BASE_URL=http://<lan-ip>:8080
+#   ARIA2_RPC_URL=http://host.docker.internal:6800/jsonrpc
+#   ARIA2_SECRET=<same secret your aria2c was started with>

@@ -1,0 +1,17 @@
+# Build artifacts & local state
+main
+data/
+session.json
+.env
+
+# VCS / tooling
+.git
+.grepple
+.opencode
+.vscode
+.idea
+.air.toml
+
+# Docs & scratch
+*.md
+cmd/resolvecheck/

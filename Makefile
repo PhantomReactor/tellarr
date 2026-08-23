@@ -59,9 +59,21 @@ watch:
                 echo "Watching...";\
             else \
                 echo "You chose not to install air. Exiting..."; \
-                exit 1; \
             fi; \
         fi
 
-.PHONY: all build run test clean watch migrate-up migrate-down migrate-status migrate-create
+# Docker
+docker-build:
+	docker build -t tellarr:latest .
+
+docker-up:
+	docker compose up -d --build
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f tellarr
+
+.PHONY: all build run test clean watch migrate-up migrate-down migrate-status migrate-create templ-generate docker-build docker-up docker-down docker-logs
 
