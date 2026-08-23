@@ -1,0 +1,92 @@
+package views
+
+import "fmt"
+
+type DownloadRowVM struct {
+	ID      string
+	Name    string
+	State   string
+	Percent float64
+	Origin  string
+}
+
+templ stateBadge(state string) {
+	switch state {
+	case "done":
+		<mark>done</mark>
+	case "downloading":
+		<span class="badge-dl">downloading</span>
+	case "paused":
+		paused
+	case "error":
+		<mark class="err-mark">error</mark>
+	default:
+		{ state }
+	}
+}
+
+templ DownloadsTable(rows []DownloadRowVM) {
+	<div id="downloads-table" hx-get="/ui/downloads/table" hx-trigger="every 2s" hx-swap="outerHTML">
+		if len(rows) == 0 {
+			<p><em>No downloads yet.</em></p>
+		} else {
+			<table>
+				<thead>
+					<tr><th>Name</th><th>Progress</th><th>State</th><th>Origin</th><th></th></tr>
+				</thead>
+				<tbody>
+					for _, row := range rows {
+						<tr>
+							<td>{ row.Name }</td>
+							<td>
+								<progress value={ fmt.Sprintf("%.1f", row.Percent) } max="100"></progress>
+								<small>{ fmt.Sprintf("%.1f%%", row.Percent) }</small>
+							</td>
+							<td>@stateBadge(row.State)</td>
+							<td>{ row.Origin }</td>
+							<td class="actions">
+								<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/pause") } class="inline-form">
+									<button type="submit" class="outline small-btn">Pause</button>
+								</form>
+								<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/resume") } class="inline-form">
+									<button type="submit" class="outline small-btn">Resume</button>
+								</form>
+								<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/delete") } class="inline-form">
+									<button type="submit" class="small-btn">Delete</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}
+
+templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
+	@Layout("Tellarr — Downloads", "downloads") {
+		<article>
+			<h2>Downloads</h2>
+			@Flash(errMsg, "error-msg")
+			@Flash(msg, "ok-msg")
+			@DownloadsTable(rows)
+		</article>
+
+		<article>
+			<h3>Add download from Telegram link</h3>
+			<form method="post" action="/ui/downloads/add">
+				<div class="grid">
+					<label>
+						Message link (t.me/c/channel/message)
+						<input type="text" name="link" placeholder="https://t.me/c/1234567/89" required/>
+					</label>
+					<label>
+						Save as filename
+						<input type="text" name="filename" placeholder="Show.S01E01.mkv" required/>
+					</label>
+				</div>
+				<button type="submit">Start download</button>
+			</form>
+		</article>
+	}
+}

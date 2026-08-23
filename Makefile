@@ -16,13 +16,20 @@ migrate-create:
 	@read -p "Migration name: " name; \
 	goose -dir $(MIGRATIONS_DIR) create $$name sql
 	
+TEMPL ?= $(shell command -v templ 2>/dev/null || echo $(HOME)/go/bin/templ)
+
+# Generate Go code from templ files
+templ-generate:
+	@echo "Generating templ..."
+	@$(TEMPL) generate
+
 # Build the application
 all: build test
 
-build:
+build: templ-generate
 	@echo "Building..."
-	
-	
+
+
 	@go build -o main cmd/api/main.go
 
 # Run the application

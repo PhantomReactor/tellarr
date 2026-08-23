@@ -1,0 +1,56 @@
+package views
+
+templ LoginPage(errMsg string) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Tellarr — Login</title>
+			<link rel="stylesheet" href="/static/pico.css"/>
+			<link rel="stylesheet" href="/static/custom.css"/>
+		</head>
+		<body>
+			<main class="container">
+				<article class="auth-card">
+					<h2>Tellarr</h2>
+					<p>Your Telegram-based indexer for the *arr suite.</p>
+					@Flash(errMsg, "error-msg")
+					<form method="post" action="/ui/login">
+						<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
+						<input type="password" name="password" placeholder="Password" autocomplete="current-password" required/>
+						<button type="submit">Login</button>
+					</form>
+					<p>No account? <a href="/ui/register">Register</a></p>
+				</article>
+			</main>
+		</body>
+	</html>
+}
+
+templ RegisterPage(errMsg string) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Tellarr — Register</title>
+			<link rel="stylesheet" href="/static/pico.css"/>
+			<link rel="stylesheet" href="/static/custom.css"/>
+		</head>
+		<body>
+			<main class="container">
+				<article class="auth-card">
+					<h2>Create account</h2>
+					@Flash(errMsg, "error-msg")
+					<form method="post" action="/ui/register">
+						<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
+						<input type="password" name="password" placeholder="Password" autocomplete="new-password" required/>
+						<button type="submit">Register</button>
+					</form>
+					<p>Have an account? <a href="/ui/login">Login</a></p>
+				</article>
+			</main>
+		</body>
+	</html>
+}

@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"strings"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -10,6 +12,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+
+	"tellarr/internal/pkg/models"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -22,7 +26,6 @@ func (s *Server) RegisterRoutes() http.Handler {
 		Level:  slog.LevelInfo,
 		Schema: httplog.SchemaECS.Concise(true),
 	}))
-	r.Use(JSONContentType)
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
@@ -34,7 +37,19 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	s.RegisterAuthRouts(r)
 	s.RegisterTelegramRoutes(r)
+	s.RegisterTorznabRoutes(r)
+	s.RegisterQBitRoutes(r)
+	r.NotFound(s.webNotFound)
+	s.RegisterWebRoutes(r)
 	return r
+}
+
+func (s *Server) webNotFound(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/ui") || r.URL.Path == "/" {
+		http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
+		return
+	}
+	models.NewResponse(w, &models.Response{Message: "not found"}, http.StatusNotFound)
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
@@ -46,12 +61,5 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		}
 		ctx = context.WithValue(ctx, middleware.RequestIDKey, requestID)
 		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func JSONContentType(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
 	})
 }

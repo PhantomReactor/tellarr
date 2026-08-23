@@ -36,7 +36,7 @@ func (s *Server) RegisterAuthRouts(r chi.Router) {
 		r.Post("/", s.HandleCreateToken)
 		r.Get("/", s.HandleGetTokens)
 		r.Get("/:tokenId", s.HandleGetToken)
-		r.Delete("/:tokenId", nil)
+		r.Delete("/{tokenId}", s.HandleDeleteToken)
 	})
 }
 
@@ -87,14 +87,14 @@ func (s *Server) HandleGetTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleGetToken(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("tokenId"), 10, 0)
+	id, err := strconv.ParseInt(chi.URLParam(r, "tokenId"), 10, 64)
 	if err != nil {
 		slog.Error("unable to decode tokenId", "error", err)
 		models.NewResponse(w, models.Response{Message: "unable to decode tokenId"}, http.StatusBadRequest)
 		return
 
 	}
-	if id != 0 {
+	if id == 0 {
 		slog.Error("tokenId is missing")
 		models.NewResponse(w, models.Response{Message: "tokenId is required"}, http.StatusBadRequest)
 		return
@@ -102,7 +102,7 @@ func (s *Server) HandleGetToken(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.tokenRepo.GetTokenById(id, enums.API)
 	if err != nil {
-		slog.Error(fmt.Sprintf("error while fetching token for %s", id), "error", err)
+		slog.Error(fmt.Sprintf("error while fetching token for %d", id), "error", err)
 		models.NewResponse(w, models.Response{Message: "error while fetching token"}, http.StatusInternalServerError)
 		return
 	}
@@ -110,14 +110,14 @@ func (s *Server) HandleGetToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleDeleteToken(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("tokenId"), 10, 0)
+	id, err := strconv.ParseInt(chi.URLParam(r, "tokenId"), 10, 64)
 	if err != nil {
 		slog.Error("unable to decode tokenId", "error", err)
 		models.NewResponse(w, models.Response{Message: "unable to decode tokenId"}, http.StatusBadRequest)
 		return
 
 	}
-	if id != 0 {
+	if id == 0 {
 		slog.Error("tokenId is missing")
 		models.NewResponse(w, models.Response{Message: "tokenId is required"}, http.StatusBadRequest)
 		return
@@ -125,7 +125,7 @@ func (s *Server) HandleDeleteToken(w http.ResponseWriter, r *http.Request) {
 
 	err = s.tokenRepo.Delete(id)
 	if err != nil {
-		slog.Error(fmt.Sprintf("error while fetching token for %s", id), "error", err)
+		slog.Error(fmt.Sprintf("error while deleting token %d", id), "error", err)
 		models.NewResponse(w, models.Response{Message: "error while fetching token"}, http.StatusInternalServerError)
 		return
 	}
@@ -147,8 +147,8 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user != nil {
-		slog.Error(fmt.Sprintf("user nor found with %s", req.Username))
+	if user == nil {
+		slog.Error(fmt.Sprintf("user not found with %s", req.Username))
 		models.NewResponse(w, models.Response{Message: "user not found"}, http.StatusNotFound)
 		return
 	}
@@ -230,13 +230,17 @@ func (s *Server) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		models.NewResponse(w, models.Response{Message: "invalid token"}, http.StatusInternalServerError)
 		return
 	}
+	if rt == nil {
+		models.NewResponse(w, models.Response{Message: "invalid token"}, http.StatusUnauthorized)
+		return
+	}
 	user, err := s.findUser("", req.UserId)
 	if err != nil {
 		slog.Error("error while fetching user", "error", err)
 		models.NewResponse(w, models.Response{Message: "error while fetching user"}, http.StatusInternalServerError)
 		return
 	}
-	if user != nil {
+	if user == nil {
 		slog.Error("user not found")
 		models.NewResponse(w, models.Response{Message: "user not found"}, http.StatusNotFound)
 		return

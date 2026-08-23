@@ -59,6 +59,17 @@ func (d *DialogsRepository) GetDialogChannelId(name string) (*models.Dialog, err
 	return &dialog, nil
 }
 
+func (d *DialogsRepository) ListDialogs(indexerOnly bool) ([]models.Dialog, error) {
+	var out []models.Dialog
+	var err error
+	if indexerOnly {
+		err = d.db.Select(&out, "SELECT * FROM DIALOGS WHERE indexer = 1 ORDER BY name")
+	} else {
+		err = d.db.Select(&out, "SELECT * FROM DIALOGS ORDER BY name")
+	}
+	return out, err
+}
+
 func (d *DialogsRepository) GetDialogsByDialogId(dialogId int64) (*models.Dialog, error) {
 	var dialog models.Dialog
 	err := d.db.Get(&dialog, "select * from dialogs where dialog_id = ?", dialogId)

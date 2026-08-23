@@ -11,8 +11,13 @@ type Response struct {
 }
 
 type MediaInfo struct {
-	Name string `json:"name,omitempty"`
-	Link string `json:"link,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Link      string `json:"link,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	MessageId int64  `json:"messageId,omitempty"`
+	SessionId int64  `json:"sessionId,omitempty"`
+	DialogId  int64  `json:"dialogId,omitempty"`
+	IsTorrent bool   `json:"isTorrent,omitempty"`
 }
 
 type DialogInfo struct {
@@ -25,6 +30,8 @@ type DownloadInfo struct {
 	Name    string  `json:"name,omitempty"`
 	Id      string  `json:"id,omitempty"`
 	Percent float64 `json:"percent,omitempty"`
+	State   string  `json:"state,omitempty"`
+	Size    int64   `json:"size,omitempty"`
 }
 
 type AuthResponse struct {

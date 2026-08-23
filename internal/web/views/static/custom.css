@@ -1,0 +1,45 @@
+/* Tellarr UI additions on top of Pico */
+nav a.active {
+  font-weight: bold;
+  text-decoration: underline;
+}
+.inline-form {
+  display: inline;
+  margin: 0;
+}
+.small-btn {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+}
+.auth-card {
+  max-width: 26rem;
+  margin: 3rem auto;
+}
+.error-msg {
+  border-color: #d32f2f;
+  background-color: rgba(211, 47, 47, 0.1);
+}
+.ok-msg {
+  border-color: #2e7d32;
+  background-color: rgba(46, 125, 50, 0.1);
+}
+.badge-dl {
+  color: #42a5f5;
+  font-weight: bold;
+}
+.err-mark {
+  background-color: rgba(211, 47, 47, 0.4);
+}
+progress {
+  width: 8rem;
+  height: 0.75rem;
+  vertical-align: middle;
+}
+td.actions form {
+  display: inline-block;
+  margin-left: 0.25rem;
+}
+input[readonly] {
+  width: 100%;
+  font-size: 0.8rem;
+}

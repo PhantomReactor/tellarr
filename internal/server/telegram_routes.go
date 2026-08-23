@@ -25,6 +25,7 @@ func (s *Server) RegisterTelegramRoutes(r chi.Router) {
 
 		r.Post("/code", s.RequestCode)
 		r.Post("/verify", s.ValidateCode)
+		r.Post("/password", s.ValidatePassword)
 		r.Post("/channels", s.AddChannels)
 		r.Get("/channels", s.ListChannels)
 		r.Get("/messages", s.Search)
@@ -165,7 +166,7 @@ func (s *Server) ValidateCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if session == nil {
-		slog.Error(fmt.Sprint("session not found for %d", request.SessionId), "error", err)
+		slog.Error(fmt.Sprintf("session not found for %d", request.SessionId), "error", err)
 		models.NewResponse(w, &models.Response{Message: "error while fetching session"}, http.StatusInternalServerError)
 		return
 	}
@@ -210,65 +211,15 @@ func (s *Server) ValidatePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ListChannels(w http.ResponseWriter, r *http.Request) {
-	var channels []models.DialogInfo
-	for sessionId, _ := range s.telegramSessions {
-		session, err := s.sessionRepo.GetSession(sessionId, "")
-		if err != nil {
-			slog.Error("error while fetching session", "error", err)
-			models.NewResponse(w, &models.Response{Message: "error while fetching session"}, http.StatusInternalServerError)
-			return
-		}
-		if session == nil {
-			continue
-		}
-
-		t, err := s.getTelegramClient(sessionId)
-		if err != nil {
-			slog.Error("error while starting telegram client", "error", err)
-			models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
-			return
-		}
-
-		api := t.client.API()
-		dialogs, err := api.MessagesGetDialogs(t.context, &tg.MessagesGetDialogsRequest{
-			Limit:      1000,
-			OffsetPeer: &tg.InputPeerEmpty{},
-		})
-		if err != nil {
-			slog.Error(err.Error())
-			models.NewResponse(w, &models.Response{Message: "unable to load channels"}, http.StatusInternalServerError)
-			return
-		}
-		dialogSlice := dialogs.(*tg.MessagesDialogsSlice)
-		for _, dialog := range dialogSlice.Chats {
-			if channel, ok := dialog.(*tg.Channel); ok {
-				existingDialog, err := s.dialogRepo.GetDialogByName(channel.Title)
-				if err != nil {
-					slog.Error("error while fetching exising channel", "error", err)
-					models.NewResponse(w, &models.Response{Message: "error while fetching exising channel"}, http.StatusInternalServerError)
-					return
-				}
-				channels = append(channels, models.DialogInfo{Name: channel.Title, Id: channel.ID, AccessHash: channel.AccessHash})
-				if existingDialog != nil {
-					continue
-				}
-				slog.Info("arrrr")
-				d := db.Dialog{
-					PhoneNumber: session.PhoneNumber,
-					Name:        channel.Title,
-					Type:        "channel",
-					SessionId:   sessionId,
-					DialogId:    channel.ID,
-					AccessHash:  channel.AccessHash,
-					Active:      true,
-					Indexer:     false,
-					CreatedAt:   time.Now(),
-					UpdatedAt:   time.Now(),
-				}
-				_, err = s.dialogRepo.CreateDialog(d)
-				slog.Error("error", "err", err)
-			}
-		}
+	dialogs, err := s.collectDialogs()
+	if err != nil {
+		slog.Error("error while collecting channels", "error", err)
+		models.NewResponse(w, &models.Response{Message: "unable to load channels"}, http.StatusInternalServerError)
+		return
+	}
+	channels := make([]models.DialogInfo, 0, len(dialogs))
+	for _, d := range dialogs {
+		channels = append(channels, models.DialogInfo{Name: d.Name, Id: d.DialogId, AccessHash: d.AccessHash})
 	}
 	models.NewResponse(w, channels, http.StatusOK)
 }
@@ -341,7 +292,22 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 	for _, m := range msgs {
 		msg, ok := m.(*tg.Message)
 		messageId := msg.GetID()
-		if !ok || msg.Media == nil {
+		if !ok {
+			continue
+		}
+		if msg.Media == nil {
+			// Link-only post: one entry per aggregator link.
+			for _, ref := range providerLinksInMessage(msg) {
+				results = append(results, models.MediaInfo{
+					Name:      ref.Title,
+					Link:      fmt.Sprintf("https://t.me/c/%d/%d", dialog.DialogId, messageId),
+					Size:      0,
+					MessageId: int64(messageId),
+					SessionId: dialog.SessionId,
+					DialogId:  dialog.DialogId,
+					IsTorrent: false,
+				})
+			}
 			continue
 		}
 		media, ok := msg.Media.(*tg.MessageMediaDocument)
@@ -354,17 +320,31 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 		}
 		var isVideo bool
 		var filename string
+		isTorrent := strings.EqualFold(doc.MimeType, "application/x-bittorrent")
 		for _, attr := range doc.Attributes {
 			switch a := attr.(type) {
 			case *tg.DocumentAttributeVideo:
 				isVideo = true
 			case *tg.DocumentAttributeFilename:
 				filename = a.FileName
+				if strings.HasSuffix(strings.ToLower(filename), ".torrent") {
+					isTorrent = true
+				}
 			}
-			isVideo = strings.HasPrefix(doc.MimeType, "video/")
+			if !isVideo && strings.HasPrefix(doc.MimeType, "video/") {
+				isVideo = true
+			}
 		}
-		if isVideo {
-			results = append(results, models.MediaInfo{Name: filename, Link: fmt.Sprintf("https://t.me/c/%d/%d", dialog.DialogId, messageId)})
+		if isVideo || isTorrent {
+			results = append(results, models.MediaInfo{
+				Name:      filename,
+				Link:      fmt.Sprintf("https://t.me/c/%d/%d", dialog.DialogId, messageId),
+				Size:      doc.Size,
+				MessageId: int64(messageId),
+				SessionId: dialog.SessionId,
+				DialogId:  dialog.DialogId,
+				IsTorrent: isTorrent,
+			})
 		}
 	}
 	models.NewResponse(w, results, http.StatusOK)
@@ -372,18 +352,26 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
 	sessionId, err := strconv.ParseInt(r.URL.Query().Get("sessionId"), 10, 64)
-	filename := r.URL.Query().Get("filename")
 	if err != nil {
 		slog.Error("error while getting sessionId", "error", err)
-		models.NewResponse(w, &models.Response{Message: "search error"}, http.StatusInternalServerError)
+		models.NewResponse(w, &models.Response{Message: "invalid sessionId"}, http.StatusBadRequest)
 		return
 	}
+	filename := r.URL.Query().Get("filename")
 	downloadLink := r.URL.Query().Get("downloadLink")
 	parts := strings.Split(downloadLink, "c/")
+	if len(parts) < 2 {
+		models.NewResponse(w, &models.Response{Message: "invalid download link"}, http.StatusBadRequest)
+		return
+	}
 	channelAndMessageId := strings.Split(parts[1], "/")
+	if len(channelAndMessageId) < 2 {
+		models.NewResponse(w, &models.Response{Message: "invalid download link"}, http.StatusBadRequest)
+		return
+	}
 	channelId, _ := strconv.ParseInt(channelAndMessageId[0], 10, 64)
 	messageId, _ := strconv.ParseInt(channelAndMessageId[1], 10, 64)
-	t := s.telegramSessions[sessionId]
+	t, err := s.getTelegramClient(sessionId)
 	if err != nil {
 		slog.Error("error while starting telegram client", "error", err)
 		models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
@@ -400,67 +388,38 @@ func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
 		models.NewResponse(w, &models.Response{Message: "dialogs not found"}, http.StatusInternalServerError)
 		return
 	}
-	api := t.client.API()
-	messages, err := api.ChannelsGetMessages(t.context, &tg.ChannelsGetMessagesRequest{
-		Channel: &tg.InputChannel{
-			ChannelID:  channelId,
-			AccessHash: dialog.AccessHash,
-		},
-		ID: []tg.InputMessageClass{
-			&tg.InputMessageID{ID: int(messageId)},
-		},
-	})
+	doc, err := s.fetchDocument(t, channelId, messageId)
 	if err != nil {
-		slog.Error(fmt.Sprintf("error while fetching message from telegram %s", downloadLink))
-		models.NewResponse(w, &models.Response{Message: "unable to fetch messages"}, http.StatusInternalServerError)
-		return
-	}
-	var msgs []tg.MessageClass
-	switch m := messages.(type) {
-	case *tg.MessagesChannelMessages:
-		msgs = m.Messages
-	}
-	if len(msgs) == 0 {
-		slog.Error(fmt.Sprintf("messages nor found for %s", downloadLink))
-		models.NewResponse(w, &models.Response{Message: "message not found"}, http.StatusInternalServerError)
-		return
-	}
-	msg, ok := msgs[0].(*tg.Message)
-	if !ok {
-		slog.Error(fmt.Sprintf("messages not found for %s", downloadLink))
-		models.NewResponse(w, &models.Response{Message: "message not found"}, http.StatusInternalServerError)
-		return
-	}
-	media, ok := msg.GetMedia()
-	if !ok {
-		slog.Error(fmt.Sprintf("media not found for %s", downloadLink))
-		models.NewResponse(w, &models.Response{Message: "media not found"}, http.StatusInternalServerError)
-		return
-	}
-	md, ok := media.(*tg.MessageMediaDocument)
-	if !ok {
-		slog.Error(fmt.Sprintf("media not found for %s", downloadLink))
-		models.NewResponse(w, &models.Response{Message: "media not found"}, http.StatusInternalServerError)
-		return
-	}
-	doc, ok := md.Document.AsNotEmpty()
-	if !ok {
-		slog.Error(fmt.Sprintf("media not found for %s", downloadLink))
+		slog.Error("unable to resolve document", "link", downloadLink, "err", err)
 		models.NewResponse(w, &models.Response{Message: "media not found"}, http.StatusInternalServerError)
 		return
 	}
 
-	id, err := s.dm.StartDownload(t.context, api, doc, filename)
+	row, err := s.dm.Start(t.context, t.client.API(), doc, sessionId, channelId, messageId, filename, "", "")
 	if err != nil {
-		slog.Error(fmt.Sprintf("cannot download %s", downloadLink))
+		slog.Error(fmt.Sprintf("cannot download %s", downloadLink), "err", err)
 		models.NewResponse(w, &models.Response{Message: "download failed"}, http.StatusInternalServerError)
 		return
 	}
-	models.NewResponse(w, models.DownloadInfo{Id: id, Name: filename}, http.StatusOK)
+	models.NewResponse(w, models.DownloadInfo{Id: row.ID, Name: row.Filename, Percent: row.Percent()}, http.StatusOK)
 }
 
 func (s *Server) Status(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	percent := s.dm.Get(id).Percent()
-	models.NewResponse(w, models.DownloadInfo{Id: id, Percent: percent}, http.StatusOK)
+	id := chi.URLParam(r, "id")
+	row, err := s.dm.Get(id)
+	if err != nil {
+		models.NewResponse(w, &models.Response{Message: "lookup failed"}, http.StatusInternalServerError)
+		return
+	}
+	if row == nil {
+		models.NewResponse(w, &models.Response{Message: "download not found"}, http.StatusNotFound)
+		return
+	}
+	models.NewResponse(w, models.DownloadInfo{
+		Id:      row.ID,
+		Name:    row.Filename,
+		Percent: row.Percent(),
+		State:   string(row.State),
+		Size:    row.Total,
+	}, http.StatusOK)
 }

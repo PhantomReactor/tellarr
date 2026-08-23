@@ -98,17 +98,24 @@ func (s *Server) deleteRefreshToken(id int64, userId int64) error {
 }
 
 func generateToken(u *db.User) (string, error) {
+	return generateTokenWithTTL(u, 15*time.Minute)
+}
+
+func generateTokenWithTTL(u *db.User, ttl time.Duration) (string, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "tellarr-insecure-dev-secret"
+	}
 	claims := &Claims{
 		UserID:   u.ID,
 		UserName: u.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	return token.SignedString([]byte(jwtSecret))
 }
 
 func (s *Server) generateRefreshToken(userId int64) (*db.Token, error) {
@@ -119,6 +126,7 @@ func (s *Server) generateRefreshToken(userId int64) (*db.Token, error) {
 	rt := &db.Token{
 		Token:     hex.EncodeToString(b),
 		UserId:    userId,
+		Type:      enums.Refresh,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -132,7 +140,7 @@ func (s *Server) generateRefreshToken(userId int64) (*db.Token, error) {
 }
 
 func (s *Server) validateRefreshToken(userId int64, token string) (*db.Token, error) {
-	rt, err := s.tokenRepo.GetToken(userId, "refresh")
+	rt, err := s.tokenRepo.GetToken(userId, enums.Refresh)
 	if err != nil {
 		return nil, err
 	}
@@ -155,11 +163,14 @@ func (s *Server) validateRefreshToken(userId int64, token string) (*db.Token, er
 
 func parseToken(tokenString string) (*Claims, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "tellarr-insecure-dev-secret"
+	}
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("invalid signing method")
 		}
-		return jwtSecret, nil
+		return []byte(jwtSecret), nil
 	})
 
 	if err != nil {
@@ -182,7 +193,7 @@ func JWTAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		parts := strings.SplitN(" ", authHeader, 2)
+		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
 			models.NewResponse(w, models.Response{Message: "bearer token required"}, http.StatusUnauthorized)
 			return

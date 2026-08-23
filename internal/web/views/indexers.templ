@@ -1,0 +1,60 @@
+package views
+
+type ChannelVM struct {
+	Name    string
+	IsIndex bool
+}
+
+templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
+	@Layout("Tellarr — Indexers", "indexers") {
+		<article>
+			<h2>Indexer channels</h2>
+			<p>Channels marked as indexers are searched by Sonarr/Radarr through the Torznab feeds.</p>
+			@Flash(errMsg, "error-msg")
+			@Flash(msg, "ok-msg")
+			if len(channels) == 0 {
+				<p>No channels found. Connect a Telegram account first.</p>
+			} else {
+				<table>
+					<thead>
+						<tr><th>Channel</th><th>Indexer</th><th></th><th>Prowlarr</th></tr>
+					</thead>
+					<tbody>
+						for _, ch := range channels {
+							<tr>
+								<td>{ ch.Name }</td>
+								<td>
+									if ch.IsIndex {
+										<mark>enabled</mark>
+									} else {
+										disabled
+									}
+								</td>
+								<td>
+									<form method="post" action="/ui/indexers/toggle" class="inline-form">
+										<input type="hidden" name="name" value={ ch.Name }/>
+										if ch.IsIndex {
+											<button type="submit" class="outline">Disable</button>
+										} else {
+											<button type="submit">Enable</button>
+										}
+									</form>
+								</td>
+								<td>
+									if ch.IsIndex {
+										<form method="post" action="/ui/indexers/prowlarr" class="inline-form">
+											<input type="hidden" name="name" value={ ch.Name }/>
+											<button type="submit" class="outline small-btn">Add to Prowlarr</button>
+										</form>
+										<a class="small-btn" href={ templ.URL("/ui/indexers/prowlarr/yml?name=" + ch.Name) }>Get YML</a>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+				<p><em>Add to Prowlarr registers a Generic Torznab indexer via the Prowlarr API (set <code>PROWLARR_URL</code> + <code>PROWLARR_API_KEY</code>). Alternatively set <code>PROWLARR_DEFINITIONS_DIR</code> to write a custom definition file, or download the YML and copy it into Prowlarr's <code>Definitions/Custom</code> folder yourself.</em></p>
+			}
+		</article>
+	}
+}

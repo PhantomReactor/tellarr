@@ -1,0 +1,101 @@
+package views
+
+import "strconv"
+
+type TokenVM struct {
+	ID        int64
+	Token     string
+	CreatedAt string
+}
+
+type IndexerFeedVM struct {
+	Name    string
+	FeedURL string
+}
+
+templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, realQbURL string, qbTestResult string, msg string, errMsg string) {
+	@Layout("Tellarr — Settings", "settings") {
+		@Flash(errMsg, "error-msg")
+		@Flash(msg, "ok-msg")
+
+		<article>
+			<h2>API keys</h2>
+			<p>Use an API key as the Torznab <code>apikey</code> parameter.</p>
+			<form method="post" action="/ui/settings/tokens" class="inline-form">
+				<button type="submit">Generate new key</button>
+			</form>
+			if len(tokens) > 0 {
+				<table>
+					<thead>
+						<tr><th>Key</th><th>Created</th><th></th></tr>
+					</thead>
+					<tbody>
+						for _, t := range tokens {
+							<tr>
+								<td><code>{ t.Token }</code></td>
+								<td>{ t.CreatedAt }</td>
+								<td>
+									<form method="post" action={ templ.URL("/ui/settings/tokens/" + strconv.FormatInt(t.ID, 10) + "/delete") } class="inline-form">
+										<button type="submit" class="outline small-btn">Delete</button>
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</article>
+
+		<article>
+			<h2>Sonarr / Radarr — Torznab indexer</h2>
+			<p>Add a "Custom Indexer" of type Torznab in Prowlarr/Sonarr/Radarr using these URLs:</p>
+			if len(feeds) == 0 {
+				<p><em>No indexer-enabled channels. Enable some on the <a href="/ui/indexers">Indexers</a> page.</em></p>
+			} else {
+				<table>
+					<thead>
+						<tr><th>Channel</th><th>Torznab feed URL</th></tr>
+					</thead>
+					<tbody>
+						for _, f := range feeds {
+							<tr>
+								<td>{ f.Name }</td>
+								<td><input type="text" readonly value={ f.FeedURL } onclick="this.select()"/></td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+			<p>Base URL: <input type="text" readonly value={ baseURL } onclick="this.select()" style="max-width:24rem"/></p>
+		</article>
+
+		<article>
+			<h2>Download clients</h2>
+			<p>Configure Sonarr/Radarr with a qBittorrent client pointing at this server:</p>
+			<ul>
+				<li>Host: <code>{ baseURLHost(baseURL) }</code></li>
+				<li>Username / password: your <code>QBIT_USER</code>/<code>QBIT_PASS</code> values</li>
+			</ul>
+			<h3>Real qBittorrent passthrough</h3>
+			if realQbURL == "" {
+				<p><em>Not configured. Set <code>QBIT_REAL_URL</code>, <code>QBIT_REAL_USER</code>, <code>QBIT_REAL_PASS</code> to forward genuine .torrent files to a real qBittorrent instance.</em></p>
+			} else {
+				<p>Forwarding .torrent files to: <code>{ realQbURL }</code>
+					<form method="get" action="/ui/settings/qbit/test" hx-get="/ui/settings/qbit/test" hx-target="#qb-test" hx-swap="innerHTML" class="inline-form">
+						<button type="submit" class="outline small-btn">Test connection</button>
+					</form>
+				</p>
+				<div id="qb-test">{ qbTestResult }</div>
+			}
+		</article>
+	}
+}
+
+func baseURLHost(baseURL string) string {
+	for _, prefix := range []string{"https://", "http://"} {
+		if len(baseURL) > len(prefix) && baseURL[:len(prefix)] == prefix {
+			return baseURL[len(prefix):]
+		}
+	}
+	return baseURL
+}

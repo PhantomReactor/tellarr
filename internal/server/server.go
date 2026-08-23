@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"tellarr/internal/database"
 	"time"
@@ -22,11 +23,12 @@ type Server struct {
 	sessionRepo      database.SessionRepository
 	dialogRepo       database.DialogsRepository
 	userRepo         database.UserRepository
-	tokenRepo        database.TokenRepository
-	dm               DownloadManager
-	appId            int
-	appHash          string
-	mu               sync.RWMutex
+	tokenRepo      database.TokenRepository
+	downloadRepo   database.DownloadsRepository
+	dm             *DownloadManager
+	appId          int
+	appHash        string
+	mu             sync.RWMutex
 }
 
 type TelegramSession struct {
@@ -45,6 +47,19 @@ func NewServer() *http.Server {
 
 	db := database.New()
 	sessionRepo := database.NewSessionRepository(db.DB)
+	dialogRepo := database.NewDialogsRepository(db.DB)
+	userRepo := database.NewUserRespository(db.DB)
+	tokenRepo := database.NewTokenRepository(db.DB)
+	downloadRepo := database.NewDownloadsRepository(db.DB)
+
+	downloadDir := os.Getenv("DOWNLOAD_DIR")
+	if strings.TrimSpace(downloadDir) == "" {
+		downloadDir = "./data/downloads"
+	}
+	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
+		panic(fmt.Errorf("cannot create download dir %s: %w", downloadDir, err))
+	}
+
 	sessionIds, err := sessionRepo.GetAllSessionIds()
 	if err != nil {
 		fmt.Println("ignoring exisiting sessions")
@@ -62,14 +77,17 @@ func NewServer() *http.Server {
 
 	}
 	NewServer := &Server{
-		port:             port,
+		port:           port,
 		telegramSessions: telegramSessions,
-		db:               db,
-		sessionRepo:      sessionRepo,
-		dialogRepo:       database.NewDialogsRepository(db.DB),
-		dm:               NewDownloadManger(),
-		appId:            appId,
-		appHash:          appHash,
+		db:             db,
+		sessionRepo:    sessionRepo,
+		dialogRepo:     dialogRepo,
+		userRepo:       userRepo,
+		tokenRepo:      tokenRepo,
+		downloadRepo:   downloadRepo,
+		dm:             NewDownloadManager(downloadRepo, downloadDir),
+		appId:          appId,
+		appHash:        appHash,
 	}
 
 	for _, sessionId := range sessionIds {
@@ -81,22 +99,29 @@ func NewServer() *http.Server {
 				s.mu.Lock()
 				s.context = ctx
 				s.mu.Unlock()
-				s.ready = started
-				close(started)
+				if s.ready == nil {
+					s.ready = started
+					close(started)
+				}
 				fmt.Println("telegram client running")
 				<-ctx.Done()
 				fmt.Println("telegram client stopped")
 				return nil
 			})
 			if err != nil {
-				panic(err)
+				slog.Error("stored telegram session failed", "sessionId", id, "err", err)
 			}
 		}()
 		select {
 		case <-started:
-			fmt.Printf("telegram sesison %d started", id)
-		case <-time.After(5 * time.Second):
-			panic(fmt.Errorf("failed to start telegram session %d", sessionId))
+			slog.Info(fmt.Sprintf("telegram session %d started", id))
+		case <-time.After(10 * time.Second):
+			// Do not take the whole app down for one dead session; the user
+			// can reconnect from the UI wizard.
+			slog.Error("failed to start stored telegram session in time", "sessionId", id)
+			NewServer.mu.Lock()
+			delete(NewServer.telegramSessions, id)
+			NewServer.mu.Unlock()
 		}
 	}
 
