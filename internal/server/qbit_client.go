@@ -52,7 +52,7 @@ func (q *QBitRealClient) login() error {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || string(body) != "Ok." {
-		return fmt.Errorf("login failed (%s): %s", resp.Status, string(body))
+		return fmt.Errorf("login failed (%s): %q at %s", resp.Status, string(body), q.baseURL+"/api/v2/auth/login")
 	}
 	return nil
 }

@@ -576,10 +576,11 @@ func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir s
 
 	name := sanitizeExternalFilename(res.Filename)
 	// aria2c resolves relative dirs against its own working directory, and
-	// the arrs need absolute save paths to import; normalize here so rows
-	// persisted before DOWNLOAD_DIR was made absolute still land correctly.
-	if abs, err := filepath.Abs(dir); err == nil {
-		dir = abs
+	// the arrs need absolute save paths to import. Rows persisted before
+	// DOWNLOAD_DIR was made absolute may carry a relative save path; snap
+	// those to the configured download dir instead of the process cwd.
+	if !filepath.IsAbs(dir) {
+		dir = s.dm.baseDir
 	}
 	opts := Aria2Options{Dir: dir, Out: name}
 	for k, v := range res.Headers {

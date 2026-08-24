@@ -6,20 +6,24 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
+      # bundled aria2c RPC; only needed to reach it from outside the
+      # container (e.g. an aria2 WebUI in your browser)
+      - "${ARIA2_RPC_PORT:-6800}:6800"
     env_file:
       - .env
     extra_hosts:
-      # lets .env use http://host.docker.internal:<port> to reach your own
-      # aria2c / qBittorrent / Prowlarr running on the docker host
+      # lets .env use http://host.docker.internal:<port> to reach qBittorrent
+      # / Prowlarr or other services running on the docker host
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/data
+      - /data:/data
 
 # All configuration lives in .env next to this file (compose also uses it for
-# ${PORT} substitution above). For Docker make sure .env contains:
+# ${PORT} substitution above). aria2c ships inside the image and is started
+# automatically by the entrypoint; for Docker make sure .env contains:
 #
-#   DB_URL=/data/tellarr.db
-#   DOWNLOAD_DIR=/data/downloads
+#   DB_URL=/data/tellarr/tellarr.db
+#   DOWNLOAD_DIR=/data/downloads/tellarr
 #   BASE_URL=http://<lan-ip>:8080
-#   ARIA2_RPC_URL=http://host.docker.internal:6800/jsonrpc
-#   ARIA2_SECRET=<same secret your aria2c was started with>
+#   ARIA2_RPC_URL=http://127.0.0.1:6800/jsonrpc
+#   ARIA2_SECRET=<any string; the bundled aria2c is started with it>

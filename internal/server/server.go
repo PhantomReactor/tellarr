@@ -64,8 +64,11 @@ func NewServer() *http.Server {
 		downloadDir = abs
 	}
 	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
-		panic(fmt.Errorf("cannot create download dir %s: %w", downloadDir, err))
+		// Non-fatal: aria2-backed downloads are written by the aria2 process,
+		// which may have access where this container does not.
+		slog.Error("cannot create download dir", "dir", downloadDir, "err", err)
 	}
+	slog.Info("download dir configured", "dir", downloadDir)
 
 	sessionIds, err := sessionRepo.GetAllSessionIds()
 	if err != nil {
