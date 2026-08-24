@@ -7,10 +7,6 @@ nav a.active {
   display: inline;
   margin: 0;
 }
-.small-btn {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.8rem;
-}
 .auth-card {
   max-width: 26rem;
   margin: 3rem auto;
@@ -23,25 +19,379 @@ nav a.active {
   border-color: #2e7d32;
   background-color: rgba(46, 125, 50, 0.1);
 }
-.badge-dl {
-  color: #42a5f5;
-  font-weight: bold;
-}
 .err-mark {
   background-color: rgba(211, 47, 47, 0.4);
-}
-progress {
-  width: 8rem;
-  height: 0.75rem;
-  vertical-align: middle;
-}
-td.actions form {
-  display: inline-block;
-  margin-left: 0.25rem;
 }
 input[readonly] {
   width: 100%;
   font-size: 0.8rem;
+}
+
+/* --- Compact icon buttons ------------------------------------------- */
+
+button.icon-btn,
+a.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  margin: 0 0.15rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--pico-muted-border-color);
+  background: transparent;
+  color: var(--pico-muted-color);
+  cursor: pointer;
+  line-height: 1;
+  vertical-align: middle;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+button.icon-btn:hover,
+a.icon-btn:hover {
+  color: var(--pico-color);
+  border-color: var(--pico-muted-color);
+  background: var(--pico-secondary-background);
+  opacity: 1;
+}
+.icon-btn-primary {
+  color: var(--pico-primary);
+}
+.icon-btn-primary:hover {
+  color: var(--pico-primary-hover) !important;
+  border-color: var(--pico-primary) !important;
+}
+.icon-btn-active {
+  color: var(--pico-primary);
+  border-color: var(--pico-primary);
+  background: var(--pico-primary-background);
+}
+.icon-btn-danger:hover {
+  color: #ef5350 !important;
+  border-color: #ef5350 !important;
+  background: rgba(211, 47, 47, 0.08) !important;
+}
+
+/* Small pill button with icon + label */
+.compact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  width: auto;
+}
+.compact-btn svg {
+  flex-shrink: 0;
+}
+
+/* --- State pills ----------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+.pill-dot-pulse {
+  animation: pill-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.pill-done {
+  color: #66bb6a;
+  background: rgba(102, 187, 106, 0.12);
+}
+.pill-active {
+  color: #42a5f5;
+  background: rgba(66, 165, 245, 0.12);
+}
+.pill-paused {
+  color: #ffb74d;
+  background: rgba(255, 183, 77, 0.12);
+}
+.pill-error {
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.12);
+}
+.pill-idle {
+  color: var(--pico-muted-color);
+  background: var(--pico-muted-background, rgba(128, 128, 128, 0.12));
+}
+
+/* --- Downloads table -------------------------------------------------- */
+
+.downloads-table td,
+.downloads-table th {
+  vertical-align: middle;
+}
+.downloads-table .num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(
+    --pico-font-family-monospace
+  ), ui-monospace, monospace;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.cell-name {
+  max-width: 22rem;
+}
+.dl-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.tag {
+  display: inline-block;
+  margin-top: 0.2rem;
+  margin-right: 0.3rem;
+  padding: 0 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  color: var(--pico-muted-color);
+  border: 1px solid var(--pico-muted-border-color);
+}
+.tag-muted {
+  opacity: 0.65;
+}
+.dl-error {
+  display: block;
+  margin-top: 0.15rem;
+  color: #ef5350;
+  overflow-wrap: anywhere;
+}
+.muted {
+  color: var(--pico-muted-color);
+}
+.speed {
+  color: #42a5f5;
+  font-weight: 600;
+}
+.cell-stats > span,
+.cell-stats > small {
+  display: block;
+  line-height: 1.25;
+}
+
+/* Slim custom progress bar (replaces native <progress>) */
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 10rem;
+}
+.progress-track {
+  flex: 1;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--pico-muted-background, rgba(128, 128, 128, 0.18));
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1e88e5, #42a5f5);
+  transition: width 0.6s ease;
+}
+.progress-fill-done {
+  background: linear-gradient(90deg, #43a047, #66bb6a);
+}
+.progress-row small.num {
+  min-width: 3.2rem;
+  text-align: right;
+}
+
+/* Page head + collapsible add-download form */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.page-head h2 {
+  margin-bottom: 0;
+}
+details.add-download summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 999px;
+  color: var(--pico-muted-color);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+details.add-download summary::-webkit-details-marker {
+  display: none;
+}
+details.add-download summary:hover {
+  color: var(--pico-primary);
+  border-color: var(--pico-primary);
+}
+details.add-download[open] summary {
+  color: var(--pico-primary);
+  border-color: var(--pico-primary);
+}
+details.add-download form {
+  margin-top: 1rem;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem 0;
+  color: var(--pico-muted-color);
+}
+.empty-state svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.5;
+}
+.empty-state p {
+  margin: 0;
+}
+
+/* --- Dropdown menu (delete options) ---------------------------------- */
+
+details.menu {
+  position: relative;
+  display: inline-block;
+}
+details.menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+details.menu summary::-webkit-details-marker {
+  display: none;
+}
+details.menu[open] summary.icon-btn {
+  color: #ef5350;
+  border-color: #ef5350;
+  background: rgba(211, 47, 47, 0.08);
+}
+.menu-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  z-index: 50;
+  min-width: 11rem;
+  padding: 0.3rem;
+  background: var(--pico-background-color);
+  border: var(--pico-border-width) solid var(--pico-muted-border-color);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.menu-body form {
+  display: block;
+  margin: 0;
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  margin: 0;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--pico-color);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu-item:hover {
+  background: var(--pico-secondary-background);
+}
+.menu-item-danger {
+  color: #ef5350;
+}
+.menu-item-danger:hover {
+  background: rgba(211, 47, 47, 0.12);
+}
+
+/* --- YAML viewer ------------------------------------------------------ */
+
+.yml-view {
+  margin-top: 1rem;
+  border: var(--pico-border-width) solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+  padding: 0.8rem;
+}
+.yml-view-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.yml-view-head strong {
+  font-family: var(
+    --pico-font-family-monospace
+  ), ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+.yml-view-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+textarea.yml-text {
+  width: 100%;
+  min-height: 14rem;
+  resize: vertical;
+  font-family: var(
+    --pico-font-family-monospace
+  ), ui-monospace, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  color: var(--pico-color);
+  background: var(--pico-card-background-color, transparent);
+}
+
+td.actions form {
+  display: inline-block;
+  margin-left: 0.15rem;
 }
 
 /* --- Mobile friendliness --- */
@@ -88,7 +438,8 @@ th {
   table.responsive tr {
     display: block;
     padding: 0.6rem 0;
-    border-bottom: var(--pico-border-width) solid var(--pico-table-border-color);
+    border-bottom: var(--pico-border-width) solid
+      var(--pico-table-border-color);
   }
   table.responsive tr:last-child {
     border-bottom: 0;
@@ -115,8 +466,18 @@ th {
     width: 100%;
   }
 
-  progress {
-    width: 7rem;
-    max-width: 40vw;
+  /* In card mode the name cell reads better without a label prefix */
+  table.responsive td.cell-name::before {
+    content: "";
+    display: none;
+  }
+  .cell-name {
+    max-width: none;
+  }
+  .dl-name {
+    white-space: normal;
+  }
+  .progress-row {
+    min-width: 8rem;
   }
 }

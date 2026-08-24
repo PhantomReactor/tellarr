@@ -44,6 +44,7 @@ func (s *Server) RegisterWebRoutes(r chi.Router) {
 		r.Post("/indexers/toggle", s.webIndexerToggle)
 		r.Post("/indexers/prowlarr", s.webIndexerProwlarr)
 		r.Get("/indexers/prowlarr/yml", s.webIndexerProwlarrYML)
+		r.Get("/indexers/prowlarr/yml/view", s.webIndexerProwlarrYMLView)
 		r.Get("/downloads", s.webDownloads)
 		r.Get("/downloads/table", s.webDownloadsTable)
 		r.Post("/downloads/add", s.webDownloadAdd)

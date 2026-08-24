@@ -290,16 +290,107 @@ func (s *Server) webIndexerProwlarrYML(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(yml)
 }
 
+// webIndexerProwlarrYMLView renders the Cardigann definition in a viewer
+// (textarea + copy/download actions) for the indexers page.
+func (s *Server) webIndexerProwlarrYMLView(w http.ResponseWriter, r *http.Request) {
+	channel := strings.TrimSpace(r.URL.Query().Get("name"))
+	dialog, err := s.dialogRepo.GetDialogByName(channel)
+	if err != nil || dialog == nil || !dialog.Indexer {
+		http.Error(w, "channel not found or not an indexer", http.StatusNotFound)
+		return
+	}
+	feedURL, err := s.indexerFeedURL(channel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	yml := string(TorznabCardigannYAML("tellarr-"+slugify(channel), "Tellarr - "+channel, channel, feedURL))
+	if err := views.YMLViewer(channel, yml).Render(r.Context(), w); err != nil {
+		slog.Error("yml viewer render failed", "err", err)
+	}
+}
+
 func downloadRowVMs(rows []models.TorrentDownload) []views.DownloadRowVM {
 	vms := make([]views.DownloadRowVM, 0, len(rows))
 	for _, row := range rows {
 		vms = append(vms, views.DownloadRowVM{
-			ID:      row.ID,
-			Name:    row.Filename,
-			State:   string(row.State),
-			Percent: row.Percent(),
-			Origin:  string(row.Origin),
+			ID:       row.ID,
+			Name:     row.Filename,
+			State:    string(row.State),
+			Percent:  row.Percent(),
+			Origin:   string(row.Origin),
+			Category: row.Category,
+			Written:  row.Written,
+			Total:    row.Total,
+			Speed:    row.Speed,
+			ETA:      row.ETA(),
+			Error:    row.Error,
 		})
+	}
+	return vms
+}
+
+// remoteTorrentVM converts a real-qBittorrent torrent into a UI row.
+func remoteTorrentVM(rt RemoteTorrent) views.DownloadRowVM {
+	written := int64(rt.Progress * float64(rt.Size))
+	eta := int64(-1)
+	if rt.Eta > 0 && rt.Eta < qBitEtaUnknown {
+		eta = rt.Eta
+	}
+	return views.DownloadRowVM{
+		ID:       rt.Hash,
+		Name:     rt.Name,
+		State:    qbitUIState(rt.State),
+		Percent:  rt.Progress * 100,
+		Origin:   "qbittorrent",
+		Category: rt.Category,
+		Written:  written,
+		Total:    rt.Size,
+		Speed:    rt.DlSpeed,
+		ETA:      eta,
+	}
+}
+
+// downloadsPageVMs assembles the rows shown on the Downloads page: local
+// (telegram/aria2) rows plus live torrents from the real qBittorrent. When the
+// real client answers, its torrents supersede the persisted external_qbit
+// placeholder rows so a forwarded .torrent is never listed twice.
+func (s *Server) downloadsPageVMs(rows []models.TorrentDownload) []views.DownloadRowVM {
+	qb := NewQBitRealClientFromEnv()
+	var remotes []RemoteTorrent
+	liveRemotes := false
+	if qb.Configured() {
+		var err error
+		remotes, err = qb.TorrentsInfo()
+		if err != nil {
+			slog.Error("real qbit info failed", "err", err)
+		} else {
+			liveRemotes = true
+		}
+	}
+	vms := make([]views.DownloadRowVM, 0, len(rows)+len(remotes))
+	for _, row := range rows {
+		if liveRemotes && row.Origin == models.OriginExternalQb {
+			continue
+		}
+		vms = append(vms, views.DownloadRowVM{
+			ID:       row.ID,
+			Name:     row.Filename,
+			State:    string(row.State),
+			Percent:  row.Percent(),
+			Origin:   string(row.Origin),
+			Category: row.Category,
+			Written:  row.Written,
+			Total:    row.Total,
+			Speed:    row.Speed,
+			ETA:      row.ETA(),
+			Error:    row.Error,
+		})
+	}
+	if liveRemotes {
+		for _, rt := range remotes {
+			vms = append(vms, remoteTorrentVM(rt))
+		}
 	}
 	return vms
 }
@@ -311,7 +402,7 @@ func (s *Server) webDownloads(w http.ResponseWriter, r *http.Request) {
 	}
 	s.refreshAriaRows(rows)
 	msg, errMsg := r.URL.Query().Get("msg"), r.URL.Query().Get("err")
-	_ = views.DownloadsPage(downloadRowVMs(rows), msg, errMsg).Render(r.Context(), w)
+	_ = views.DownloadsPage(s.downloadsPageVMs(rows), msg, errMsg).Render(r.Context(), w)
 }
 
 func (s *Server) webDownloadsTable(w http.ResponseWriter, r *http.Request) {
@@ -320,7 +411,7 @@ func (s *Server) webDownloadsTable(w http.ResponseWriter, r *http.Request) {
 		rows = nil
 	}
 	s.refreshAriaRows(rows)
-	_ = views.DownloadsTable(downloadRowVMs(rows)).Render(r.Context(), w)
+	_ = views.DownloadsTable(s.downloadsPageVMs(rows)).Render(r.Context(), w)
 }
 
 func (s *Server) webDownloadAdd(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +478,9 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 
 	row, err := s.dm.Get(id)
 	if err != nil || row == nil {
-		redirectFlash(w, r, "/ui/downloads", "", "download not found")
+		// Not a local row: it may be a torrent living on the real
+		// qBittorrent instance.
+		s.webRemoteDownloadAction(w, r, id, action)
 		return
 	}
 
@@ -422,16 +515,73 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 		} else {
 			msg = "resumed"
 		}
-	case "delete":
-		if err := s.dm.Remove(id); err != nil {
-			errMsg = "delete failed"
+	case "delete", "delete-files":
+		delFiles := action == "delete-files"
+		// aria2-backed rows must also have their RPC job stopped, or the
+		// download keeps running invisibly after the row disappears.
+		if row.Origin == models.OriginAria2 && row.RemoteGid != "" {
+			if aria := NewAria2ClientFromEnv(); aria.Configured() {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				if err := aria.Remove(ctx, row.RemoteGid); err != nil {
+					slog.Warn("aria2 remove failed", "gid", row.RemoteGid, "err", err)
+				}
+				cancel()
+			}
+		}
+		var derr error
+		if delFiles && row.ContentPath != "" &&
+			(row.Origin == models.OriginTelegram || row.Origin == models.OriginAria2) {
+			derr = s.deleteLocal(*row, true)
 		} else {
-			msg = "deleted"
+			derr = s.dm.Remove(id)
+		}
+		if derr != nil {
+			slog.Error("delete failed", "id", id, "err", derr)
+			errMsg = "delete failed"
+		} else if delFiles {
+			msg = "download deleted with files"
+		} else {
+			msg = "record removed"
 		}
 	default:
 		errMsg = "unknown action"
 	}
 	redirectFlash(w, r, "/ui/downloads", msg, errMsg)
+}
+
+// webRemoteDownloadAction applies pause/resume/delete to a torrent on the
+// real qBittorrent instance (rows that only exist there, keyed by infohash).
+func (s *Server) webRemoteDownloadAction(w http.ResponseWriter, r *http.Request, id, action string) {
+	qb := NewQBitRealClientFromEnv()
+	if !qb.Configured() {
+		redirectFlash(w, r, "/ui/downloads", "", "download not found")
+		return
+	}
+	var err error
+	okMsg := ""
+	switch action {
+	case "pause":
+		err = qb.Pause([]string{id})
+		okMsg = "paused"
+	case "resume":
+		err = qb.Resume([]string{id})
+		okMsg = "resumed"
+	case "delete":
+		err = qb.Delete([]string{id}, false)
+		okMsg = "record removed"
+	case "delete-files":
+		err = qb.Delete([]string{id}, true)
+		okMsg = "download deleted with files"
+	default:
+		redirectFlash(w, r, "/ui/downloads", "", "unknown action")
+		return
+	}
+	if err != nil {
+		slog.Error("remote qbittorrent action failed", "hash", id, "action", action, "err", err)
+		redirectFlash(w, r, "/ui/downloads", "", action+" failed")
+		return
+	}
+	redirectFlash(w, r, "/ui/downloads", okMsg, "")
 }
 
 func (s *Server) baseURL() string {

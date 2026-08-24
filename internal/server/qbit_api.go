@@ -689,6 +689,7 @@ func (s *Server) refreshAriaRows(rows []dbm.TorrentDownload) {
 		newState, _ := MapAriaStatus(st.Status)
 		written := st.Int64(st.CompletedLength)
 		total := st.Int64(st.TotalLength)
+		row.Speed = st.Int64(st.DownloadSpeed)
 		contentPath := row.ContentPath
 		filename := row.Filename
 		if len(st.Files) > 0 && st.Files[0].Path != "" {
@@ -733,11 +734,15 @@ func localToQbInfo(row dbm.TorrentDownload) qbTorrentInfo {
 	}
 	eta := int64(8640000)
 	if progress > 0 && progress < 1 {
-		elapsed := time.Since(row.CreatedAt).Seconds()
-		if elapsed > 1 {
-			rate := float64(row.Written) / elapsed
-			if rate > 1 {
-				eta = int64(float64(row.Total-row.Written) / rate)
+		if row.Speed > 0 {
+			eta = int64(float64(row.Total-row.Written) / float64(row.Speed))
+		} else {
+			elapsed := time.Since(row.CreatedAt).Seconds()
+			if elapsed > 1 {
+				rate := float64(row.Written) / elapsed
+				if rate > 1 {
+					eta = int64(float64(row.Total-row.Written) / rate)
+				}
 			}
 		}
 	} else if progress >= 1 {
@@ -748,6 +753,7 @@ func localToQbInfo(row dbm.TorrentDownload) qbTorrentInfo {
 		Category:    row.Category,
 		Completed:   row.Written,
 		ContentPath: row.ContentPath,
+		DlSpeed:     row.Speed,
 		Eta:         eta,
 		Hash:        row.ID,
 		Name:        row.Filename,

@@ -33,6 +33,11 @@ type liveDownload struct {
 	written   atomic.Int64
 	total     int64
 	lastFlush time.Time
+
+	// speed sampling state (guarded by dm.mu): bytes seen at lastSample.
+	lastWritten int64
+	lastSample  time.Time
+	speed       int64
 }
 
 type progressWriter struct {
@@ -189,6 +194,34 @@ func (dm *DownloadManager) Start(ctx context.Context, api *tg.Client, doc *tg.Do
 	return row, nil
 }
 
+// sampleSpeed derives a bytes-per-second estimate from the delta since the
+// previous call. Callers must hold dm.mu; the UI polls every couple of
+// seconds, which is a natural sampling window. A short exponential moving
+// average keeps the displayed number from jumping around.
+func sampleSpeed(live *liveDownload) int64 {
+	now := time.Now()
+	written := live.written.Load()
+	if live.lastSample.IsZero() {
+		live.lastSample = now
+		live.lastWritten = written
+		return live.speed
+	}
+	elapsed := now.Sub(live.lastSample).Seconds()
+	if elapsed < 0.75 {
+		return live.speed
+	}
+	rate := float64(written-live.lastWritten) / elapsed
+	live.lastSample = now
+	live.lastWritten = written
+	const alpha = 0.6
+	smoothed := alpha*rate + (1-alpha)*float64(live.speed)
+	if smoothed < 0 {
+		smoothed = 0
+	}
+	live.speed = int64(smoothed)
+	return live.speed
+}
+
 func (dm *DownloadManager) Get(id string) (*db.TorrentDownload, error) {
 	row, err := dm.repo.Get(id)
 	if err != nil || row == nil {
@@ -212,12 +245,16 @@ func (dm *DownloadManager) List() ([]db.TorrentDownload, error) {
 		return nil, err
 	}
 	dm.mu.Lock()
-	defer dm.mu.Unlock()
 	for i := range rows {
 		if live, ok := dm.live[rows[i].ID]; ok {
 			rows[i].Written = live.written.Load()
+			rows[i].Speed = sampleSpeed(live)
+			if rows[i].State == db.StateDownloading && live.total > 0 && rows[i].Written >= live.total {
+				rows[i].State = db.StateDone
+			}
 		}
 	}
+	dm.mu.Unlock()
 	return rows, nil
 }
 

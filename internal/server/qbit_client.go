@@ -145,6 +145,27 @@ type RemoteTorrent struct {
 	Eta         int64   `json:"eta"`
 }
 
+// qBitEtaUnknown is qBittorrent's sentinel for "no estimate".
+const qBitEtaUnknown = 8640000
+
+// qbitUIState maps a real-qBittorrent state string (both 4.x "paused*" and
+// 5.x "stopped*" variants) onto the four states the web UI understands.
+func qbitUIState(state string) string {
+	switch state {
+	case "pausedDL", "stoppedDL":
+		return "paused"
+	case "error", "errored", "missingFiles":
+		return "error"
+	case "uploading", "stalledUP", "pausedUP", "stoppedUP", "forcedUP",
+		"queuedUP", "checkingUP", "allocating", "completed":
+		return "done"
+	default:
+		// downloading, stalledDL, forcedDL, metaDL, queuedDL,
+		// checkingDL, checkingResumeData, moving, unknown...
+		return "downloading"
+	}
+}
+
 func (q *QBitRealClient) TorrentsInfo() ([]RemoteTorrent, error) {
 	if !q.Configured() {
 		return nil, nil
