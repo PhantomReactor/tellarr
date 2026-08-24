@@ -71,15 +71,19 @@ func (dm *DownloadManager) path(filename string) string {
 }
 
 // maybeFlush throttles progress persistence to once per second per download.
+// It persists synchronously (outside the lock) so a flush always lands before
+// the finalize write in Start's goroutine; async writes here used to race with
+// pause/completion and resurrect stale "downloading" states.
 func (dm *DownloadManager) maybeFlush(id string) {
 	dm.mu.Lock()
-	defer dm.mu.Unlock()
 	live, ok := dm.live[id]
 	if !ok {
+		dm.mu.Unlock()
 		return
 	}
 	now := time.Now()
 	if now.Sub(live.lastFlush) < time.Second {
+		dm.mu.Unlock()
 		return
 	}
 	live.lastFlush = now
@@ -88,11 +92,10 @@ func (dm *DownloadManager) maybeFlush(id string) {
 	if live.total > 0 && written >= live.total {
 		state = db.StateDone
 	}
-	go func() {
-		if err := dm.repo.UpdateProgress(id, written, state, ""); err != nil {
-			slog.Error("failed to persist download progress", "id", id, "err", err)
-		}
-	}()
+	dm.mu.Unlock()
+	if err := dm.repo.UpdateProgress(id, written, state, ""); err != nil {
+		slog.Error("failed to persist download progress", "id", id, "err", err)
+	}
 }
 
 func (dm *DownloadManager) Start(ctx context.Context, api *tg.Client, doc *tg.Document, sessionId, dialogId, messageId int64, filename, category, savePath string) (*db.TorrentDownload, error) {

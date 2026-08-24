@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -308,6 +309,7 @@ func (s *Server) webDownloads(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		rows = nil
 	}
+	s.refreshAriaRows(rows)
 	msg, errMsg := r.URL.Query().Get("msg"), r.URL.Query().Get("err")
 	_ = views.DownloadsPage(downloadRowVMs(rows), msg, errMsg).Render(r.Context(), w)
 }
@@ -317,6 +319,7 @@ func (s *Server) webDownloadsTable(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		rows = nil
 	}
+	s.refreshAriaRows(rows)
 	_ = views.DownloadsTable(downloadRowVMs(rows)).Render(r.Context(), w)
 }
 
@@ -391,7 +394,24 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 	var msg, errMsg string
 	switch action {
 	case "pause":
-		if err := s.dm.Pause(id); err != nil {
+		if row.Origin == models.OriginAria2 && row.RemoteGid != "" {
+			// Pausing only in the DB lets refreshAriaRows flip the state
+			// straight back to downloading; pause in aria2 itself.
+			aria := NewAria2ClientFromEnv()
+			if !aria.Configured() {
+				errMsg = "aria2 rpc not configured"
+				break
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			err := aria.Pause(ctx, row.RemoteGid)
+			cancel()
+			if err != nil {
+				errMsg = "pause failed"
+			} else {
+				_ = s.downloadRepo.SetState(id, models.StatePaused)
+				msg = "paused"
+			}
+		} else if err := s.dm.Pause(id); err != nil {
 			errMsg = "pause failed"
 		} else {
 			msg = "paused"
