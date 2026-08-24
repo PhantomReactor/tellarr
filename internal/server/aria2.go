@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -101,6 +102,13 @@ func (a *Aria2Client) AddURI(ctx context.Context, uri string, opts Aria2Options)
 	if opts.Referer != "" {
 		o["referer"] = opts.Referer
 	}
+	slog.Info("aria2.addUri",
+		"uri", uri,
+		"dir", opts.Dir,
+		"out", opts.Out,
+		"headers", len(opts.Headers),
+		"referer", opts.Referer,
+	)
 	res, err := a.call(ctx, "aria2.addUri", []string{uri}, o)
 	if err != nil {
 		return "", err
