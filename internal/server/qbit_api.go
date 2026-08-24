@@ -34,6 +34,38 @@ type qbSessionStore struct {
 
 var qbSessions = &qbSessionStore{sessions: make(map[string]time.Time)}
 
+// qbCategories stores download client categories created via the WebUI API
+// (Prowlarr/Sonarr/Radarr test their client by creating their category and
+// reading it back, so this must round-trip).
+type qbCategoryStore struct {
+	mu   sync.Mutex
+	cats map[string]string
+}
+
+var qbCategories = &qbCategoryStore{cats: make(map[string]string)}
+
+func (st *qbCategoryStore) all() map[string]string {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := make(map[string]string, len(st.cats))
+	for k, v := range st.cats {
+		out[k] = v
+	}
+	return out
+}
+
+func (st *qbCategoryStore) set(name, savePath string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.cats[name] = savePath
+}
+
+func (st *qbCategoryStore) delete(name string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	delete(st.cats, name)
+}
+
 func (st *qbSessionStore) create() string {
 	buf := make([]byte, 16)
 	rand.Read(buf)
@@ -138,16 +170,100 @@ func (s *Server) RegisterQBitRoutes(r chi.Router) {
 			r.Post("/torrents/delete", s.qbDeleteTorrents)
 
 			r.Get("/sync/maindata", s.qbSyncMaindata)
-			r.Get("/torrents/categories", func(w http.ResponseWriter, r *http.Request) {
-				writeJSONRaw(w, map[string]any{})
-			})
-			r.Post("/torrents/createCategory", okHandler)
+			r.Get("/torrents/categories", s.qbGetCategories)
+			r.Post("/torrents/createCategory", s.qbCreateCategory)
+			r.Post("/torrents/editCategory", s.qbEditCategory)
+			r.Post("/torrents/deleteCategory", s.qbDeleteCategory)
+			r.Post("/torrents/setCategory", s.qbSetCategory)
 			r.Post("/torrents/createFolder", okHandler)
 		})
 	})
 }
 
 func okHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Ok."))
+}
+
+func (s *Server) qbGetCategories(w http.ResponseWriter, r *http.Request) {
+	cats := qbCategories.all()
+	out := make(map[string]any, len(cats))
+	for name, savePath := range cats {
+		out[name] = map[string]string{"name": name, "savePath": savePath}
+	}
+	writeJSONRaw(w, out)
+}
+
+func (s *Server) qbCreateCategory(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("category"))
+	if name == "" {
+		http.Error(w, "Category name is empty", http.StatusBadRequest)
+		return
+	}
+	qbCategories.set(name, r.FormValue("savePath"))
+	w.Write([]byte("Ok."))
+}
+
+// qbEditCategory upserts; real qBittorrent renames, but a simple update is
+// enough for the arrs (they only ever create what they need).
+func (s *Server) qbEditCategory(w http.ResponseWriter, r *http.Request) {
+	s.qbCreateCategory(w, r)
+}
+
+func (s *Server) qbDeleteCategory(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	qbCategories.delete(r.FormValue("categories"))
+	w.Write([]byte("Ok."))
+}
+
+// qbSetCategory moves torrents into a category (empty clears it). The arrs
+// track their grabs by polling torrents/info?category=<name>, so the label
+// must stick to the row.
+func (s *Server) qbSetCategory(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	category := r.FormValue("category")
+	hashes := r.FormValue("hashes")
+	if hashes == "" {
+		w.Write([]byte("Ok."))
+		return
+	}
+	ids := []string{}
+	if hashes == "all" {
+		rows, err := s.downloadRepo.List()
+		if err != nil {
+			slog.Error("set category list failed", "err", err)
+			w.Write([]byte("Fails."))
+			return
+		}
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+	} else {
+		ids = strings.Split(hashes, "|")
+	}
+	failed := 0
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if err := s.downloadRepo.SetCategory(id, category); err != nil {
+			slog.Error("set category failed", "hash", id, "err", err)
+			failed++
+		}
+	}
+	if failed > 0 {
+		w.Write([]byte("Fails."))
+		return
+	}
 	w.Write([]byte("Ok."))
 }
 
@@ -990,11 +1106,16 @@ func (s *Server) qbSyncMaindata(w http.ResponseWriter, r *http.Request) {
 			ContentPath: rt.ContentPath,
 		}
 	}
+	cats := qbCategories.all()
+	catMap := make(map[string]any, len(cats))
+	for name, savePath := range cats {
+		catMap[name] = map[string]string{"name": name, "savePath": savePath}
+	}
 	writeJSONRaw(w, map[string]any{
 		"rid":         rid + 1,
 		"full_update": true,
 		"torrents":    torrents,
-		"categories":  map[string]any{},
+		"categories":  catMap,
 		"tags":        []string{},
 	})
 }

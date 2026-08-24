@@ -64,6 +64,13 @@ func (r *DownloadsRepository) SetRemoteGid(id, gid string) error {
 	return err
 }
 
+// SetCategory re-labels a download (the arrs use torrents/setCategory to keep
+// their grabs separated by category).
+func (r *DownloadsRepository) SetCategory(id, category string) error {
+	_, err := r.db.Exec(`UPDATE DOWNLOADS SET category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, category, id)
+	return err
+}
+
 func (r *DownloadsRepository) Get(id string) (*models.TorrentDownload, error) {
 	var d models.TorrentDownload
 	err := r.db.Get(&d, "SELECT * FROM DOWNLOADS WHERE id = ?", id)
