@@ -1,5 +1,11 @@
 package views
 
+templ authBrand() {
+	<div class="auth-brand">
+		<span class="brand-mark">@iconLogo()</span>
+	</div>
+}
+
 templ LoginPage(errMsg string) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
@@ -7,21 +13,24 @@ templ LoginPage(errMsg string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Tellarr — Login</title>
+			<meta name="theme-color" content="#0a0d14"/>
+			<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b7cf6'/%3E%3Cstop offset='1' stop-color='%234fa8ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3Cpath d='M6.5 8h11M12 8v9.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"/>
 			<link rel="stylesheet" href="/static/pico.css"/>
 			<link rel="stylesheet" href="/static/custom.css"/>
 		</head>
 		<body>
 			<main class="container">
 				<article class="auth-card">
-					<h2>Tellarr</h2>
-					<p>Your Telegram-based indexer for the *arr suite.</p>
+					@authBrand()
+					<h2>Sign in to Tellarr</h2>
+					<p class="muted">Your Telegram-based indexer for the *arr suite.</p>
 					@Flash(errMsg, "error-msg")
 					<form method="post" action="/ui/login">
 						<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
 						<input type="password" name="password" placeholder="Password" autocomplete="current-password" required/>
 						<button type="submit">Login</button>
 					</form>
-					<p>No account? <a href="/ui/register">Register</a></p>
+					<p class="muted auth-alt">No account? <a href="/ui/register">Register</a></p>
 				</article>
 			</main>
 		</body>
@@ -35,20 +44,24 @@ templ RegisterPage(errMsg string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Tellarr — Register</title>
+			<meta name="theme-color" content="#0a0d14"/>
+			<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b7cf6'/%3E%3Cstop offset='1' stop-color='%234fa8ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3Cpath d='M6.5 8h11M12 8v9.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"/>
 			<link rel="stylesheet" href="/static/pico.css"/>
 			<link rel="stylesheet" href="/static/custom.css"/>
 		</head>
 		<body>
 			<main class="container">
 				<article class="auth-card">
+					@authBrand()
 					<h2>Create account</h2>
+					<p class="muted">Pick a username and password to get started.</p>
 					@Flash(errMsg, "error-msg")
 					<form method="post" action="/ui/register">
 						<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
 						<input type="password" name="password" placeholder="Password" autocomplete="new-password" required/>
 						<button type="submit">Register</button>
 					</form>
-					<p>Have an account? <a href="/ui/login">Login</a></p>
+					<p class="muted auth-alt">Have an account? <a href="/ui/login">Login</a></p>
 				</article>
 			</main>
 		</body>

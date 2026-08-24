@@ -1,5 +1,9 @@
 package views
 
+templ iconLogo() {
+	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 12 3 20 7"></polyline><line x1="12" y1="3" x2="12" y2="21"></line><line x1="8" y1="21" x2="16" y2="21"></line></svg>
+}
+
 templ Layout(title string, active string) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
@@ -7,6 +11,8 @@ templ Layout(title string, active string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title }</title>
+			<meta name="theme-color" content="#0a0d14"/>
+			<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b7cf6'/%3E%3Cstop offset='1' stop-color='%234fa8ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3Cpath d='M6.5 8h11M12 8v9.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"/>
 			<link rel="stylesheet" href="/static/pico.css"/>
 			<link rel="stylesheet" href="/static/custom.css"/>
 			<script src="/static/htmx.min.js" defer></script>
@@ -16,13 +22,18 @@ templ Layout(title string, active string) {
 			<main class="container">
 				<nav>
 					<ul>
-						<li><strong>Tellarr</strong></li>
+						<li>
+							<a href="/ui/downloads" class="brand">
+								<span class="brand-mark">@iconLogo()</span>
+								<strong>Tellarr</strong>
+							</a>
+						</li>
 					</ul>
 					<ul>
-						<li><a href="/ui/telegram" class={ templ.KV("active", active == "telegram") }>Telegram</a></li>
-						<li><a href="/ui/indexers" class={ templ.KV("active", active == "indexers") }>Indexers</a></li>
-						<li><a href="/ui/downloads" class={ templ.KV("active", active == "downloads") }>Downloads</a></li>
-						<li><a href="/ui/settings" class={ templ.KV("active", active == "settings") }>Settings</a></li>
+						<li><a href="/ui/telegram" class={ "nav-link", templ.KV("active", active == "telegram") }>Telegram</a></li>
+						<li><a href="/ui/indexers" class={ "nav-link", templ.KV("active", active == "indexers") }>Indexers</a></li>
+						<li><a href="/ui/downloads" class={ "nav-link", templ.KV("active", active == "downloads") }>Downloads</a></li>
+						<li><a href="/ui/settings" class={ "nav-link", templ.KV("active", active == "settings") }>Settings</a></li>
 						<li>
 							<form method="post" action="/ui/logout" class="inline-form">
 								<button type="submit" class="icon-btn" title="Logout" aria-label="Logout">@iconLogout()</button>
@@ -31,6 +42,7 @@ templ Layout(title string, active string) {
 					</ul>
 				</nav>
 				{ children... }
+				<footer class="site-footer">Tellarr — Telegram channels as Torznab indexers</footer>
 			</main>
 		</body>
 	</html>
