@@ -139,7 +139,7 @@ func (s *Server) RegisterQBitRoutes(r chi.Router) {
 			})
 			r.Get("/app/preferences", func(w http.ResponseWriter, r *http.Request) {
 				writeJSONRaw(w, map[string]any{
-					"save_path":           os.Getenv("DOWNLOAD_DIR"),
+					"save_path":           s.dm.baseDir,
 					"temp_path_enabled":   false,
 					"temp_path":           "",
 					"alt_dl_limit":        0,
@@ -575,6 +575,12 @@ func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir s
 	}
 
 	name := sanitizeExternalFilename(res.Filename)
+	// aria2c resolves relative dirs against its own working directory, and
+	// the arrs need absolute save paths to import; normalize here so rows
+	// persisted before DOWNLOAD_DIR was made absolute still land correctly.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	opts := Aria2Options{Dir: dir, Out: name}
 	for k, v := range res.Headers {
 		opts.Headers = append(opts.Headers, k+": "+v)

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,6 +56,12 @@ func NewServer() *http.Server {
 	downloadDir := os.Getenv("DOWNLOAD_DIR")
 	if strings.TrimSpace(downloadDir) == "" {
 		downloadDir = "./data/downloads"
+	}
+	// aria2c and the arrs resolve paths on their own; a relative DOWNLOAD_DIR
+	// would be reinterpreted against their working directories, so pin it to
+	// an absolute path once at startup.
+	if abs, err := filepath.Abs(downloadDir); err == nil {
+		downloadDir = abs
 	}
 	if err := os.MkdirAll(downloadDir, 0o755); err != nil {
 		panic(fmt.Errorf("cannot create download dir %s: %w", downloadDir, err))
