@@ -103,7 +103,10 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 		s.writeCaps(w)
 		return
 	}
-	if t != "search" && t != "tvsearch" && t != "movieSearch" {
+	// Standard torznab function names: search, tvsearch, movie
+	// ("movieSearch" kept for backwards compatibility).
+	t = strings.ToLower(t)
+	if t != "search" && t != "tvsearch" && t != "movie" && t != "moviesearch" {
 		writeTorznabError(w, 202, "No such function: "+t)
 		return
 	}
@@ -131,20 +134,18 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 	items := make([]torznabItem, 0, len(results))
 	for _, res := range results {
 		hash := SyntheticHash(dialog.DialogId, res.MessageId, res.Name)
-		pubDate := time.Now().UTC().Format(http.TimeFormat)
+		pubDate := time.Now().UTC().Format(time.RFC1123Z)
 		item := torznabItem{
 			Title:   res.Name,
 			GUID:    hash,
 			PubDate: pubDate,
 			Size:    res.Size,
 		}
-		// Emit parent + common subcategories so results survive category
-		// intersection filtering in Sonarr/Radarr/Prowlarr regardless of
-		// which categories were picked in their indexer settings.
-		categories := []string{"5000", "5030", "5040"}
-		if t == "movieSearch" {
-			categories = []string{"2000", "2030", "2040"}
-		}
+		// Emit parent + common subcategories for BOTH movies and TV so
+		// results survive category intersection filtering in
+		// Sonarr/Radarr/Prowlarr regardless of query type or which
+		// categories were picked in their indexer settings.
+		categories := []string{"2000", "2030", "2040", "5000", "5030", "5040"}
 		attrs := make([]torznabAttr, 0, 2+len(categories))
 		for _, c := range categories {
 			attrs = append(attrs, torznabAttr{Name: "category", Value: c})
@@ -245,8 +246,8 @@ func (s *Server) writeCaps(w http.ResponseWriter) {
     <movie-search available="yes" supportedParams="q"/>
   </searching>
   <categories>
-    <category id="5000" title="TV"><subcat id="5030" title="TV/HD"/></category>
-    <category id="2000" title="Movies"><subcat id="2030" title="Movies/HD"/></category>
+    <category id="5000" title="TV"><subcat id="5030" title="TV/HD"/><subcat id="5040" title="TV/SD"/></category>
+    <category id="2000" title="Movies"><subcat id="2030" title="Movies/HD"/><subcat id="2040" title="Movies/SD"/></category>
   </categories>
 </caps>`
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")

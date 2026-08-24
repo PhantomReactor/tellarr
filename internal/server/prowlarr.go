@@ -204,17 +204,27 @@ func slugify(s string) string {
 // TorznabCardigannYAML renders a minimal Cardigann torznab definition that
 // proxies one Tellarr feed. Only the apikey is user-configurable in Prowlarr;
 // everything else is baked in.
+//
+// Constraints of Prowlarr/Jackett's Cardigann engine that shape this output:
+//   - template conditionals REQUIRE an {{else}} branch, so we never use if/end
+//     and instead always send q/season/ep params (tellarr treats empty as absent)
+//   - the category field must output a TRACKER id from categorymappings, so we
+//     register one synthetic tracker id "all" mapped to every newznab category
+//   - path-level "categories" are matched against tracker ids too, so they are
+//     omitted entirely (a mismatch silently skips the search path)
 func TorznabCardigannYAML(id, name, channel, feedURL string) []byte {
 	base := ""
 	apiPath := "/"
+	apikey := ""
 	if fu, err := url.Parse(feedURL); err == nil && fu.Host != "" {
 		base = fu.Scheme + "://" + fu.Host
 		apiPath = fu.EscapedPath()
+		apikey = fu.Query().Get("apikey")
 	}
-	pathLine := base + apiPath +
+	pathLine := apiPath +
 		"?apikey={{ .Config.apikey }}" +
 		"&t={{ .Query.Type }}" +
-		"{{ if .Query.Q }}&q={{ .Query.Q }}{{ end }}" +
+		"&q={{ .Query.Q }}" +
 		"&season={{ .Query.Season }}" +
 		"&ep={{ .Query.Episode }}"
 
@@ -230,22 +240,51 @@ func TorznabCardigannYAML(id, name, channel, feedURL string) []byte {
 	fmt.Fprintf(&b, "links:\n  - %s/\n", base)
 	fmt.Fprintf(&b, "caps:\n")
 	fmt.Fprintf(&b, "  categorymappings:\n")
-	fmt.Fprintf(&b, "    - {id: 2000, cat: Movies}\n")
-	fmt.Fprintf(&b, "    - {id: 2030, cat: Movies/HD}\n")
-	fmt.Fprintf(&b, "    - {id: 2040, cat: Movies/SD}\n")
-	fmt.Fprintf(&b, "    - {id: 5000, cat: TV}\n")
-	fmt.Fprintf(&b, "    - {id: 5030, cat: TV/HD}\n")
-	fmt.Fprintf(&b, "    - {id: 5040, cat: TV/SD}\n")
+	for _, cat := range []string{"Movies", "Movies/HD", "Movies/SD", "TV", "TV/HD", "TV/SD"} {
+		fmt.Fprintf(&b, "    - {id: all, cat: %s}\n", cat)
+	}
 	fmt.Fprintf(&b, "  modes:\n")
 	fmt.Fprintf(&b, "    search: [q]\n")
-	fmt.Fprintf(&b, "    tv-search: [q,season,ep]\n")
+	fmt.Fprintf(&b, "    movie-search: [q]\n")
+	fmt.Fprintf(&b, "    tv-search: [q, season, ep]\n")
 	fmt.Fprintf(&b, "settings:\n")
 	fmt.Fprintf(&b, "  - name: apikey\n")
 	fmt.Fprintf(&b, "    type: text\n")
 	fmt.Fprintf(&b, "    label: ApiKey\n")
-	fmt.Fprintf(&b, "paths:\n")
-	fmt.Fprintf(&b, "  - path: \"%s\"\n", pathLine)
-	fmt.Fprintf(&b, "    method: get\n")
+	if apikey != "" {
+		fmt.Fprintf(&b, "    default: \"%s\"\n", apikey)
+	}
+	fmt.Fprintf(&b, "search:\n")
+	fmt.Fprintf(&b, "  paths:\n")
+	fmt.Fprintf(&b, "    - path: \"%s\"\n", pathLine)
+	fmt.Fprintf(&b, "      method: get\n")
+	fmt.Fprintf(&b, "      response:\n")
+	fmt.Fprintf(&b, "        type: xml\n")
+	fmt.Fprintf(&b, "  rows:\n")
+	fmt.Fprintf(&b, "    selector: item\n")
+	fmt.Fprintf(&b, "  fields:\n")
+	fmt.Fprintf(&b, "    title:\n")
+	fmt.Fprintf(&b, "      selector: title\n")
+	fmt.Fprintf(&b, "    download:\n")
+	fmt.Fprintf(&b, "      selector: enclosure\n")
+	fmt.Fprintf(&b, "      attribute: url\n")
+	fmt.Fprintf(&b, "    infohash:\n")
+	fmt.Fprintf(&b, "      selector: guid\n")
+	fmt.Fprintf(&b, "    date:\n")
+	fmt.Fprintf(&b, "      selector: pubDate\n")
+	fmt.Fprintf(&b, "    size:\n")
+	fmt.Fprintf(&b, "      selector: enclosure\n")
+	fmt.Fprintf(&b, "      attribute: length\n")
+	fmt.Fprintf(&b, "    seeders:\n")
+	fmt.Fprintf(&b, "      text: \"1\"\n")
+	fmt.Fprintf(&b, "    peers:\n")
+	fmt.Fprintf(&b, "      text: \"1\"\n")
+	fmt.Fprintf(&b, "    downloadvolumefactor:\n")
+	fmt.Fprintf(&b, "      text: \"0\"\n")
+	fmt.Fprintf(&b, "    uploadvolumefactor:\n")
+	fmt.Fprintf(&b, "      text: \"1\"\n")
+	fmt.Fprintf(&b, "    category:\n")
+	fmt.Fprintf(&b, "      text: \"all\"\n")
 	return []byte(b.String())
 }
 

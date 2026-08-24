@@ -124,12 +124,26 @@ func TestTorznabCardigannYAMLContent(t *testing.T) {
 		"type: torznab",
 		"name: Tellarr - MyChannel",
 		"- name: apikey",
-		"http://base:8080/torznab/MyChannel/api?apikey={{ .Config.apikey }}",
-		"{{ .Query.Type }}",
-		"tv-search: [q,season,ep]",
+		"default: \"k1\"",
+		"/torznab/MyChannel/api?apikey={{ .Config.apikey }}&t={{ .Query.Type }}&q={{ .Query.Q }}",
+		"response:\n        type: xml",
+		"selector: item",
+		"{id: all, cat: Movies}",
+		"{id: all, cat: TV/SD}",
+		"movie-search: [q]",
+		"tv-search: [q, season, ep]",
+		"text: \"all\"",
 	} {
 		if !strings.Contains(yml, want) {
 			t.Errorf("yaml missing %q\n%s", want, yml)
+		}
+	}
+	for _, banned := range []string{
+		"{{ if ", // Prowlarr's engine requires {{else}}, conditionals break silently
+		"{{ end }}",
+	} {
+		if strings.Contains(yml, banned) {
+			t.Errorf("yaml must not contain %q\n%s", banned, yml)
 		}
 	}
 }
