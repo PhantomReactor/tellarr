@@ -28,3 +28,39 @@ function fallbackCopy(ta) {
     document.execCommand("copy");
   } catch (e) {}
 }
+
+// Make htmx swaps visible: scroll swapped-in content into view and surface
+// failed requests instead of failing silently.
+document.addEventListener("htmx:afterSwap", function (e) {
+  var t = e.detail && e.detail.target;
+  if (t && t.id === "yml-viewer" && t.firstElementChild) {
+    t.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+});
+
+document.addEventListener("htmx:responseError", function (e) {
+  var xhr = e.detail.xhr;
+  var msg =
+    (xhr && xhr.responseText && xhr.responseText.replace(/<[^>]*>/g, "").trim()) ||
+    "request failed";
+  showToast(msg.slice(0, 200), true);
+});
+
+document.addEventListener("htmx:sendError", function () {
+  showToast("network error — is the server reachable?", true);
+});
+
+function showToast(message, isError) {
+  var el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.className = "toast show" + (isError ? " toast-error" : "");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(function () {
+    el.className = "toast";
+  }, 4000);
+}
