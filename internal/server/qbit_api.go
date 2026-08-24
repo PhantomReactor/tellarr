@@ -576,10 +576,14 @@ func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir s
 
 	name := sanitizeExternalFilename(res.Filename)
 	// aria2c resolves relative dirs against its own working directory, and
-	// the arrs need absolute save paths to import. Rows persisted before
-	// DOWNLOAD_DIR was made absolute may carry a relative save path; snap
-	// those to the configured download dir instead of the process cwd.
+	// rows persisted by older builds may carry relative or cwd-joined
+	// garbage (e.g. /data/tellarr/data/downloads/...). Anything outside the
+	// configured download root is snapped back to the root so a download
+	// can never land in the app workdir.
 	if !filepath.IsAbs(dir) {
+		dir = s.dm.baseDir
+	} else if rel, err := filepath.Rel(s.dm.baseDir, dir); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		slog.Warn("download save path outside download root, snapping to root", "requested", dir, "root", s.dm.baseDir)
 		dir = s.dm.baseDir
 	}
 	opts := Aria2Options{Dir: dir, Out: name}
