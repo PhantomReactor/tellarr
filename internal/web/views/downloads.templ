@@ -30,35 +30,37 @@ templ DownloadsTable(rows []DownloadRowVM) {
 		if len(rows) == 0 {
 			<p><em>No downloads yet.</em></p>
 		} else {
-			<table>
-				<thead>
-					<tr><th>Name</th><th>Progress</th><th>State</th><th>Origin</th><th></th></tr>
-				</thead>
-				<tbody>
-					for _, row := range rows {
-						<tr>
-							<td>{ row.Name }</td>
-							<td>
-								<progress value={ fmt.Sprintf("%.1f", row.Percent) } max="100"></progress>
-								<small>{ fmt.Sprintf("%.1f%%", row.Percent) }</small>
-							</td>
-							<td>@stateBadge(row.State)</td>
-							<td>{ row.Origin }</td>
-							<td class="actions">
-								<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/pause") } class="inline-form">
-									<button type="submit" class="outline small-btn">Pause</button>
-								</form>
-								<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/resume") } class="inline-form">
-									<button type="submit" class="outline small-btn">Resume</button>
-								</form>
-								<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/delete") } class="inline-form">
-									<button type="submit" class="small-btn">Delete</button>
-								</form>
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
+			<div class="table-wrap">
+				<table class="responsive">
+					<thead>
+						<tr><th>Name</th><th>Progress</th><th>State</th><th>Origin</th><th></th></tr>
+					</thead>
+					<tbody>
+						for _, row := range rows {
+							<tr>
+								<td data-label="Name">{ row.Name }</td>
+								<td data-label="Progress">
+									<progress value={ fmt.Sprintf("%.1f", row.Percent) } max="100"></progress>
+									<small>{ fmt.Sprintf("%.1f%%", row.Percent) }</small>
+								</td>
+								<td data-label="State">@stateBadge(row.State)</td>
+								<td data-label="Origin">{ row.Origin }</td>
+								<td class="actions" data-label="Actions">
+									<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/pause") } class="inline-form">
+										<button type="submit" class="outline small-btn">Pause</button>
+									</form>
+									<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/resume") } class="inline-form">
+										<button type="submit" class="outline small-btn">Resume</button>
+									</form>
+									<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/delete") } class="inline-form">
+										<button type="submit" class="small-btn">Delete</button>
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
 		}
 	</div>
 }

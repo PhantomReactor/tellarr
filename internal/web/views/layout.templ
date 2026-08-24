@@ -24,7 +24,7 @@ templ Layout(title string, active string) {
 						<li><a href="/ui/settings" class={ templ.KV("active", active == "settings") }>Settings</a></li>
 						<li>
 							<form method="post" action="/ui/logout" class="inline-form">
-								<button type="submit" class="outline">Logout</button>
+								<button type="submit" class="outline small-btn">Logout</button>
 							</form>
 						</li>
 					</ul>

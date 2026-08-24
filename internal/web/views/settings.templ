@@ -24,17 +24,18 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 			<form method="post" action="/ui/settings/tokens" class="inline-form">
 				<button type="submit">Generate new key</button>
 			</form>
-			if len(tokens) > 0 {
-				<table>
+		if len(tokens) > 0 {
+			<div class="table-wrap">
+				<table class="responsive">
 					<thead>
 						<tr><th>Key</th><th>Created</th><th></th></tr>
 					</thead>
 					<tbody>
 						for _, t := range tokens {
 							<tr>
-								<td><code>{ t.Token }</code></td>
-								<td>{ t.CreatedAt }</td>
-								<td>
+								<td data-label="Key"><code>{ t.Token }</code></td>
+								<td data-label="Created">{ t.CreatedAt }</td>
+								<td class="actions" data-label="Actions">
 									<form method="post" action={ templ.URL("/ui/settings/tokens/" + strconv.FormatInt(t.ID, 10) + "/delete") } class="inline-form">
 										<button type="submit" class="outline small-btn">Delete</button>
 									</form>
@@ -43,7 +44,8 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 						}
 					</tbody>
 				</table>
-			}
+			</div>
+		}
 		</article>
 
 		<article>
@@ -52,19 +54,21 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 			if len(feeds) == 0 {
 				<p><em>No indexer-enabled channels. Enable some on the <a href="/ui/indexers">Indexers</a> page.</em></p>
 			} else {
-				<table>
-					<thead>
-						<tr><th>Channel</th><th>Torznab feed URL</th></tr>
-					</thead>
-					<tbody>
-						for _, f := range feeds {
-							<tr>
-								<td>{ f.Name }</td>
-								<td><input type="text" readonly value={ f.FeedURL } onclick="this.select()"/></td>
-							</tr>
-						}
-					</tbody>
-				</table>
+				<div class="table-wrap">
+					<table class="responsive">
+						<thead>
+							<tr><th>Channel</th><th>Torznab feed URL</th></tr>
+						</thead>
+						<tbody>
+							for _, f := range feeds {
+								<tr>
+									<td data-label="Channel">{ f.Name }</td>
+									<td data-label="Feed URL"><input type="text" readonly value={ f.FeedURL } onclick="this.select()"/></td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
 			}
 			<p>Base URL: <input type="text" readonly value={ baseURL } onclick="this.select()" style="max-width:24rem"/></p>
 		</article>

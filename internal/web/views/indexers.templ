@@ -15,32 +15,33 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 			if len(channels) == 0 {
 				<p>No channels found. Connect a Telegram account first.</p>
 			} else {
-				<table>
+			<div class="table-wrap">
+				<table class="responsive">
 					<thead>
 						<tr><th>Channel</th><th>Indexer</th><th></th><th>Prowlarr</th></tr>
 					</thead>
 					<tbody>
 						for _, ch := range channels {
 							<tr>
-								<td>{ ch.Name }</td>
-								<td>
+								<td data-label="Channel">{ ch.Name }</td>
+								<td data-label="Indexer">
 									if ch.IsIndex {
 										<mark>enabled</mark>
 									} else {
 										disabled
 									}
 								</td>
-								<td>
+								<td data-label="Toggle">
 									<form method="post" action="/ui/indexers/toggle" class="inline-form">
 										<input type="hidden" name="name" value={ ch.Name }/>
 										if ch.IsIndex {
-											<button type="submit" class="outline">Disable</button>
+											<button type="submit" class="outline small-btn">Disable</button>
 										} else {
-											<button type="submit">Enable</button>
+											<button type="submit" class="small-btn">Enable</button>
 										}
 									</form>
 								</td>
-								<td>
+								<td class="actions" data-label="Prowlarr">
 									if ch.IsIndex {
 										<form method="post" action="/ui/indexers/prowlarr" class="inline-form">
 											<input type="hidden" name="name" value={ ch.Name }/>
@@ -53,6 +54,7 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 						}
 					</tbody>
 				</table>
+			</div>
 				<p><em>Add to Prowlarr registers a Generic Torznab indexer via the Prowlarr API (set <code>PROWLARR_URL</code> + <code>PROWLARR_API_KEY</code>). Alternatively set <code>PROWLARR_DEFINITIONS_DIR</code> to write a custom definition file, or download the YML and copy it into Prowlarr's <code>Definitions/Custom</code> folder yourself.</em></p>
 			}
 		</article>

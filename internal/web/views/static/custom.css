@@ -43,3 +43,80 @@ input[readonly] {
   width: 100%;
   font-size: 0.8rem;
 }
+
+/* --- Mobile friendliness --- */
+
+/* Nav: let the brand and link groups wrap on narrow screens */
+nav {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+nav ul {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+/* Long filenames / feed URLs / API keys must not blow up the layout */
+td,
+th {
+  overflow-wrap: anywhere;
+}
+
+/* Horizontal scroll fallback for tables that stay tabular */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 720px) {
+  /* Pico's .grid keeps N columns at any width; stack form fields instead */
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  h2 {
+    font-size: 1.3rem;
+  }
+  h3 {
+    font-size: 1.1rem;
+  }
+
+  /* Stacked "card" rows: each td becomes a labeled line */
+  table.responsive thead {
+    display: none;
+  }
+  table.responsive tr {
+    display: block;
+    padding: 0.6rem 0;
+    border-bottom: var(--pico-border-width) solid var(--pico-table-border-color);
+  }
+  table.responsive tr:last-child {
+    border-bottom: 0;
+  }
+  table.responsive td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.3rem 0;
+    border-bottom: 0;
+    background: none;
+  }
+  table.responsive td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--pico-muted-color);
+  }
+  table.responsive td.actions {
+    flex-wrap: wrap;
+  }
+  table.responsive td.actions::before {
+    width: 100%;
+  }
+
+  progress {
+    width: 7rem;
+    max-width: 40vw;
+  }
+}
