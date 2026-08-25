@@ -5,6 +5,7 @@ import "time"
 type DownloadState string
 
 const (
+	StateQueued      DownloadState = "queued"
 	StateDownloading DownloadState = "downloading"
 	StatePaused      DownloadState = "paused"
 	StateDone        DownloadState = "done"

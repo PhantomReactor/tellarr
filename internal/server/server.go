@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/tg"
 	_ "github.com/joho/godotenv/autoload"
 )
 
@@ -24,12 +25,12 @@ type Server struct {
 	sessionRepo      database.SessionRepository
 	dialogRepo       database.DialogsRepository
 	userRepo         database.UserRepository
-	tokenRepo      database.TokenRepository
-	downloadRepo   database.DownloadsRepository
-	dm             *DownloadManager
-	appId          int
-	appHash        string
-	mu             sync.RWMutex
+	tokenRepo        database.TokenRepository
+	downloadRepo     database.DownloadsRepository
+	dm               *DownloadManager
+	appId            int
+	appHash          string
+	mu               sync.RWMutex
 }
 
 type TelegramSession struct {
@@ -38,6 +39,9 @@ type TelegramSession struct {
 	client  *telegram.Client
 	ready   chan struct{}
 	err     error
+
+	poolMu  sync.Mutex
+	dlPools map[int]tg.Invoker
 }
 
 func NewServer() *http.Server {
@@ -87,18 +91,21 @@ func NewServer() *http.Server {
 
 	}
 	NewServer := &Server{
-		port:           port,
+		port:             port,
 		telegramSessions: telegramSessions,
-		db:             db,
-		sessionRepo:    sessionRepo,
-		dialogRepo:     dialogRepo,
-		userRepo:       userRepo,
-		tokenRepo:      tokenRepo,
-		downloadRepo:   downloadRepo,
-		dm:             NewDownloadManager(downloadRepo, downloadDir),
-		appId:          appId,
-		appHash:        appHash,
+		db:               db,
+		sessionRepo:      sessionRepo,
+		dialogRepo:       dialogRepo,
+		userRepo:         userRepo,
+		tokenRepo:        tokenRepo,
+		downloadRepo:     downloadRepo,
+		dm:               NewDownloadManager(downloadRepo, downloadDir),
+		appId:            appId,
+		appHash:          appHash,
 	}
+	// The download manager needs the server to re-resolve Telegram media
+	// when queued downloads are promoted to active transfers.
+	NewServer.dm.resolve = NewServer.resolveDownloadMedia
 
 	for _, sessionId := range sessionIds {
 		started := make(chan struct{})

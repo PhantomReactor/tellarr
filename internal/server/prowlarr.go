@@ -231,8 +231,10 @@ func TorznabCardigannYAML(id, name, channel, feedURL string) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "---\n")
 	fmt.Fprintf(&b, "id: %s\n", id)
-	fmt.Fprintf(&b, "name: %s\n", name)
-	fmt.Fprintf(&b, "description: \"Tellarr Torznab proxy for Telegram channel '%s'\"\n", channel)
+	// Quoted so channel names with unicode, colons or other YAML-hostile
+	// characters survive Prowlarr's Cardigann parser.
+	fmt.Fprintf(&b, "name: %s\n", yamlQuote(name))
+	fmt.Fprintf(&b, "description: %s\n", yamlQuote(fmt.Sprintf("Tellarr Torznab proxy for Telegram channel '%s'", channel)))
 	fmt.Fprintf(&b, "type: torznab\n")
 	fmt.Fprintf(&b, "language: en-us\n")
 	fmt.Fprintf(&b, "encoding: utf-8\n")
@@ -294,4 +296,12 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n]) + "..."
+}
+
+// yamlQuote renders s as a double-quoted YAML scalar, escaping backslashes
+// and double quotes so arbitrary channel names parse cleanly.
+func yamlQuote(s string) string {
+	q := strings.ReplaceAll(s, `\`, `\\`)
+	q = strings.ReplaceAll(q, `"`, `\"`)
+	return `"` + q + `"`
 }

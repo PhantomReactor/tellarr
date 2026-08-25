@@ -149,3 +149,37 @@ func TestExternalHashStable(t *testing.T) {
 		t.Fatal("external hash unstable or collides with synthetic hash")
 	}
 }
+
+func TestGuessSizeFromTitleAndMessage(t *testing.T) {
+	perLink := &tg.Message{
+		Message: "Movie Name 2024\n" +
+			"480p HDRip 1.4GB => https://gdflix.top/file/abc1\n" +
+			"720p WEB-DL => https://gdflix.top/file/abc2",
+	}
+	links := providerLinksInMessage(perLink)
+	if len(links) != 2 {
+		t.Fatalf("expected 2 links, got %d", len(links))
+	}
+	gib := float64(1 << 30)
+	want := int64(1.4 * gib)
+	if got := guessSize(perLink, links[0].Title); got < want-(1<<20) || got > want+(1<<20) {
+		t.Errorf("link0 size = %d, want ~%d", got, want)
+	}
+	// No size on this line: falls back to the message-wide value.
+	fallback := &tg.Message{Message: "Movie Name 2024\n1080p => https://gdflix.top/file/abc1"}
+	links = providerLinksInMessage(fallback)
+	got := guessSize(fallback, links[0].Title)
+	if got != 0 {
+		t.Errorf("message without any size should yield 0, got %d", got)
+	}
+	withSize := &tg.Message{Message: "Movie Name 2024 [2.5 GB]\n1080p => https://gdflix.top/file/abc1"}
+	links = providerLinksInMessage(withSize)
+	got = guessSize(withSize, links[0].Title)
+	want = int64(2.5 * gib)
+	if got < want-(1<<20) || got > want+(1<<20) {
+		t.Errorf("fallback size = %d, want ~%d", got, want)
+	}
+	if guessSize(nil, "") != 0 {
+		t.Error("nil message with empty title should yield 0")
+	}
+}

@@ -485,7 +485,11 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 		// Real torrent file: pull bytes and hand off to the genuine client.
 		buf := new(bytes.Buffer)
 		dl := newDownloader()
-		_, err = dl.Download(t.client.API(), &tg.InputDocumentFileLocation{
+		api, err := t.downloadAPI(t.context, doc.DCID)
+		if err != nil {
+			return fmt.Errorf("download pool unavailable: %w", err)
+		}
+		_, err = dl.Download(api, &tg.InputDocumentFileLocation{
 			ID:            doc.ID,
 			AccessHash:    doc.AccessHash,
 			FileReference: doc.FileReference,
@@ -500,7 +504,11 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 
 	default:
 		// Direct media: start our own downloader under the fake hash.
-		_, err = s.dm.Start(t.context, t.client.API(), doc, dialog.SessionId, dialogId, messageId, filename, category, savePath)
+		api, err := t.downloadAPI(t.context, doc.DCID)
+		if err != nil {
+			return fmt.Errorf("download pool unavailable: %w", err)
+		}
+		_, err = s.dm.Start(t.context, api, doc, dialog.SessionId, dialogId, messageId, filename, category, savePath)
 		return err
 	}
 }
@@ -723,6 +731,8 @@ func localToQbInfo(row dbm.TorrentDownload) qbTorrentInfo {
 	}
 	state := "downloading"
 	switch row.State {
+	case dbm.StateQueued:
+		state = "queuedDL"
 	case dbm.StateDone:
 		state = "pausedUP"
 	case dbm.StatePaused:

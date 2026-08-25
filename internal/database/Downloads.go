@@ -91,7 +91,7 @@ func (r *DownloadsRepository) List() ([]models.TorrentDownload, error) {
 
 func (r *DownloadsRepository) ListActive() ([]models.TorrentDownload, error) {
 	var out []models.TorrentDownload
-	err := r.db.Select(&out, `SELECT * FROM DOWNLOADS WHERE state IN (?, ?)`, models.StateDownloading, models.StatePaused)
+	err := r.db.Select(&out, `SELECT * FROM DOWNLOADS WHERE state IN (?, ?, ?)`, models.StateQueued, models.StateDownloading, models.StatePaused)
 	return out, err
 }
 

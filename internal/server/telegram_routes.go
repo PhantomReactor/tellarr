@@ -301,7 +301,7 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 				results = append(results, models.MediaInfo{
 					Name:      ref.Title,
 					Link:      fmt.Sprintf("https://t.me/c/%d/%d", dialog.DialogId, messageId),
-					Size:      0,
+					Size:      guessSize(msg, ref.Title),
 					MessageId: int64(messageId),
 					SessionId: dialog.SessionId,
 					DialogId:  dialog.DialogId,
@@ -395,7 +395,13 @@ func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := s.dm.Start(t.context, t.client.API(), doc, sessionId, channelId, messageId, filename, "", "")
+	api, err := t.downloadAPI(t.context, doc.DCID)
+	if err != nil {
+		slog.Error("error while creating download pool", "err", err)
+		models.NewResponse(w, &models.Response{Message: "download pool unavailable"}, http.StatusInternalServerError)
+		return
+	}
+	row, err := s.dm.Start(t.context, api, doc, sessionId, channelId, messageId, filename, "", "")
 	if err != nil {
 		slog.Error(fmt.Sprintf("cannot download %s", downloadLink), "err", err)
 		models.NewResponse(w, &models.Response{Message: "download failed"}, http.StatusInternalServerError)

@@ -163,7 +163,9 @@ func absURL(base, ref string) string {
 	return b.ResolveReference(r).String()
 }
 
-func parseSize(label string) int64 {
+// ParseSize extracts a byte size embedded in arbitrary text such as
+// "1.4 GB", "700MB" or "2,5Gb"; returns 0 when no size is present.
+func ParseSize(label string) int64 {
 	m := sizeRe.FindStringSubmatch(label)
 	if m == nil {
 		return 0
@@ -283,7 +285,7 @@ func extractCandidates(baseURL, html string) []candidate {
 			return
 		}
 		seen[u] = true
-		size := parseSize(label)
+		size := ParseSize(label)
 		out = append(out, candidate{url: u, label: stripTags(label), size: size})
 	}
 	for _, m := range anchorRe.FindAllStringSubmatch(html, -1) {

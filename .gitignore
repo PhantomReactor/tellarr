@@ -35,4 +35,6 @@ main
 
 session.json
 
-data/
+# Local database & downloads
+data/tellarr.db
+data/*

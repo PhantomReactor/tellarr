@@ -441,7 +441,12 @@ func (s *Server) webDownloadAdd(w http.ResponseWriter, r *http.Request) {
 	if filename == "" {
 		filename = documentFilename(doc, fmt.Sprintf("%d_%d", channelId, messageId))
 	}
-	if _, err := s.dm.Start(t.context, t.client.API(), doc, dialog.SessionId, channelId, messageId, filename, "", ""); err != nil {
+	api, err := t.downloadAPI(t.context, doc.DCID)
+	if err != nil {
+		redirectFlash(w, r, "/ui/downloads", "", "download pool unavailable")
+		return
+	}
+	if _, err := s.dm.Start(t.context, api, doc, dialog.SessionId, channelId, messageId, filename, "", ""); err != nil {
 		redirectFlash(w, r, "/ui/downloads", "", "download could not be started")
 		return
 	}

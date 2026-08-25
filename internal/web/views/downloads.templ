@@ -123,6 +123,8 @@ templ statePill(state string) {
 		<span class="pill pill-done"><span class="pill-dot"></span>Done</span>
 	case "downloading":
 		<span class="pill pill-active"><span class="pill-dot pill-dot-pulse"></span>Downloading</span>
+	case "queued":
+		<span class="pill pill-idle"><span class="pill-dot pill-dot-pulse"></span>Queued</span>
 	case "paused":
 		<span class="pill pill-paused"><span class="pill-dot"></span>Paused</span>
 	case "error":
@@ -197,7 +199,7 @@ templ DownloadsTable(rows []DownloadRowVM) {
 								</td>
 								<td data-label="State">@statePill(row.State)</td>
 								<td class="actions" data-label="">
-									if row.State == "downloading" {
+									if row.State == "downloading" || row.State == "queued" {
 										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/pause") } class="inline-form">
 											<button type="submit" class="icon-btn" title="Pause" aria-label="Pause">@iconPause()</button>
 										</form>

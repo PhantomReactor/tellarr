@@ -17,7 +17,7 @@ import (
 )
 
 func newDownloader() *downloader.Downloader {
-	return downloader.NewDownloader()
+	return downloader.NewDownloader().WithPartSize(downloadPartSize)
 }
 
 const newznabNS = "http://www.newznab.com/DTD/2010/feeds/attributes/"
@@ -299,7 +299,7 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 			for _, ref := range providerLinksInMessage(msg) {
 				out = append(out, MediaInfoResult{
 					Name:      ref.Title,
-					Size:      0,
+					Size:      guessSize(msg, ref.Title),
 					MessageId: int64(msg.ID),
 					IsTorrent: false,
 					URL:       ref.URL,
@@ -385,8 +385,13 @@ func (s *Server) HandleTorrentLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-bittorrent")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"tellarr_%d_%d.torrent\"", channelId, messageId))
 	w.WriteHeader(http.StatusOK)
+	api, err := t.downloadAPI(t.context, doc.DCID)
+	if err != nil {
+		slog.Error("download pool unavailable", "err", err)
+		return
+	}
 	dl := newDownloader()
-	_, err = dl.Download(t.client.API(), &tg.InputDocumentFileLocation{
+	_, err = dl.Download(api, &tg.InputDocumentFileLocation{
 		ID:            doc.ID,
 		AccessHash:    doc.AccessHash,
 		FileReference: doc.FileReference,

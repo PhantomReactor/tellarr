@@ -134,7 +134,7 @@ func resolveTMBCloud(ctx context.Context, client *http.Client, rawURL string) (*
 
 	res := &Result{
 		URL:  linkURL,
-		Size: parseSize(firstMatch(sizePillRe, page.Body)),
+		Size: ParseSize(firstMatch(sizePillRe, page.Body)),
 		Headers: map[string]string{
 			"Referer": referer,
 		},
