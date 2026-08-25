@@ -51,18 +51,14 @@ func (q *QBitRealClient) login() error {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	// Stock qBittorrent answers 200 "Ok." plus an SID session cookie.
-	// Middleboxes (reverse proxies, gateways) sometimes strip the body or
-	// collapse the reply to 204; an issued SID cookie still proves login,
-	// so accept that before falling back to the strict check.
-	if u, err := url.Parse(q.baseURL); err == nil {
-		for _, c := range q.http.Jar.Cookies(u) {
-			if c.Name == "SID" {
-				return nil
-			}
-		}
+	// qBittorrent < 5.2 answers 200 "Ok." on success and 200 "Fails."
+	// on bad credentials; 5.2+ answers 204 with an empty body on
+	// success and 401 on bad credentials. So: "Fails." always rejects,
+	// anything else in the 2xx range accepts.
+	if string(body) == "Fails." {
+		return fmt.Errorf("login rejected (%s): bad credentials? at %s", resp.Status, q.baseURL+"/api/v2/auth/login")
 	}
-	if resp.StatusCode != http.StatusOK || string(body) != "Ok." {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("login failed (%s): %q at %s", resp.Status, string(body), q.baseURL+"/api/v2/auth/login")
 	}
 	return nil
@@ -136,7 +132,8 @@ func (q *QBitRealClient) AddTorrentBytes(torrent []byte, category, savePath stri
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	// 5.2+ replies 204 to endpoints with empty bodies; accept any 2xx.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("remote add failed (%s): %s", resp.Status, string(b))
 	}
@@ -212,7 +209,8 @@ func (q *QBitRealClient) action(hash, endpoint string, extra url.Values) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	// 5.2+ replies 204 to endpoints with empty bodies; accept any 2xx.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("%s failed: %s", endpoint, resp.Status)
 	}
 	return nil
