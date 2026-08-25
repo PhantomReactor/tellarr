@@ -2,13 +2,19 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gotd/td/bin"
+	"github.com/gotd/td/pool"
+	"github.com/gotd/td/rpc"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
@@ -85,6 +91,59 @@ func (f floodWaitInvoker) Invoke(ctx context.Context, input bin.Encoder, output 
 	}
 }
 
+// retryInvoker re-runs RPCs that failed because a pooled connection died
+// mid-request (engine closed, connection dead, transport error). A retry
+// simply acquires another pooled connection — usually a freshly created
+// one — so connection churn no longer aborts a multi-gigabyte transfer.
+// Bounded attempts with backoff keep a truly dead session from spinning.
+type retryInvoker struct {
+	next tg.Invoker
+	max  int
+}
+
+func (r retryInvoker) Invoke(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
+	var err error
+	for attempt := 0; ; attempt++ {
+		err = r.next.Invoke(ctx, input, output)
+		if err == nil || attempt >= r.max || !transientInvokeErr(ctx, err) {
+			return err
+		}
+		delay := time.Duration(attempt+1) * 500 * time.Millisecond
+		if delay > 5*time.Second {
+			delay = 5 * time.Second
+		}
+		slog.Warn("transient telegram rpc failure during download, retrying",
+			"attempt", attempt+1, "max", r.max, "delay", delay, "err", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
+// transientInvokeErr reports whether err looks like a pooled connection
+// dying mid-request rather than a permanent RPC failure. A done caller
+// context means the download itself was paused/stopped, never retried.
+func transientInvokeErr(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if _, ok := tgerr.AsFloodWait(err); ok {
+		return false // handled by floodWaitInvoker
+	}
+	switch {
+	case errors.Is(err, rpc.ErrEngineClosed), // "engine was closed"
+		errors.Is(err, pool.ErrConnDead), // "connection dead"
+		errors.Is(err, context.Canceled), // "engine forcibly closed"
+		errors.Is(err, io.EOF),
+		errors.Is(err, io.ErrUnexpectedEOF):
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 // downloadAPI returns a *tg.Client whose RPCs are distributed across a pool
 // of parallel connections on dc. Pass the document's home DCID: unlike the
 // primary client invoker, pooled connections get no automatic FILE_MIGRATE
@@ -94,18 +153,23 @@ func (t *TelegramSession) downloadAPI(ctx context.Context, dc int) (*tg.Client, 
 	t.poolMu.Lock()
 	defer t.poolMu.Unlock()
 
+	t.mu.RLock()
+	sessionCtx := t.context
+	t.mu.RUnlock()
+	if sessionCtx != nil {
+		if sessionCtx.Err() != nil {
+			// The session client stopped; cached pool engines died with it.
+			t.dlPools = nil
+			return nil, fmt.Errorf("telegram session stopped")
+		}
+		ctx = sessionCtx
+	}
+
 	if t.dlPools == nil {
 		t.dlPools = make(map[int]tg.Invoker)
 	}
 	if inv, ok := t.dlPools[dc]; ok {
 		return tg.NewClient(inv), nil
-	}
-
-	t.mu.RLock()
-	sessionCtx := t.context
-	t.mu.RUnlock()
-	if sessionCtx != nil {
-		ctx = sessionCtx
 	}
 
 	var (
@@ -120,6 +184,6 @@ func (t *TelegramSession) downloadAPI(ctx context.Context, dc int) (*tg.Client, 
 	if err != nil {
 		return nil, err
 	}
-	t.dlPools[dc] = floodWaitInvoker{next: inv}
+	t.dlPools[dc] = floodWaitInvoker{next: retryInvoker{next: inv, max: 8}}
 	return tg.NewClient(t.dlPools[dc]), nil
 }
