@@ -234,7 +234,7 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 				<div class="table-toolbar">
 					<div class="search-box" role="search">
 						@iconSearch()
-						<input type="search" placeholder="Filter by name, category, source…" oninput="tellarrFilter(this)" data-target="downloads-table" aria-label="Filter downloads"/>
+						<input type="text" placeholder="Filter by name, category, source…" oninput="tellarrFilter(this)" data-target="downloads-table" aria-label="Filter downloads"/>
 					</div>
 				</div>
 			}

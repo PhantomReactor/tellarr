@@ -14,8 +14,17 @@ import (
 
 const sessionCookie = "tellarr_session"
 
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) RegisterWebRoutes(r chi.Router) {
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(views.StaticFS()))))
+	// Embedded assets have no modtime, so without explicit headers browsers
+	// may heuristically cache stale JS/CSS forever. Force revalidation.
+	r.Handle("/static/*", http.StripPrefix("/static/", noCache(http.FileServer(http.FS(views.StaticFS())))))
 
 	r.Get("/ui/login", func(w http.ResponseWriter, r *http.Request) {
 		if _, err := r.Cookie(sessionCookie); err == nil {
