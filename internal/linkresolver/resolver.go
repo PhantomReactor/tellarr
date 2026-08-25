@@ -65,6 +65,12 @@ var providers = []provider{
 		defaults: []string{"gdflix"},
 		resolve:  resolveGDFlix,
 	},
+	{
+		name:     "tmbcloud",
+		envKey:   "TMBCLOUD_HOSTS",
+		defaults: []string{"tmbcloud"},
+		resolve:  resolveTMBCloud,
+	},
 }
 
 func providerFor(rawURL string) *provider {
@@ -117,6 +123,9 @@ var (
 		regexp.MustCompile(`(?i)(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']`),
 		regexp.MustCompile(`(?i)window\.open\(\s*["']([^"']+)["']`),
 		regexp.MustCompile(`(?i)\burl\s*:\s*["'](https?://[^"']+)["']`),
+		// data-url attributes back "copy link" buttons on several hosts
+		// (e.g. TMBCloud's cloudfiles page) that never render an <a href>.
+		regexp.MustCompile(`(?i)data-url\s*=\s*["'](https?://[^"']+)["']`),
 	}
 	titleRe    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	tagRe      = regexp.MustCompile(`(?s)<[^>]*>`)
