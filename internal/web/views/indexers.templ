@@ -25,8 +25,16 @@ func slugifyName(s string) string {
 	return b.String()
 }
 
+func channelSearchText(name string, isIndex bool) string {
+	if isIndex {
+		return strings.ToLower(name + " enabled")
+	}
+	return strings.ToLower(name + " disabled")
+}
+
 // YMLViewer shows a Cardigann definition in a read-only textarea with
-// copy/download actions. Rendered into #yml-viewer via htmx.
+// copy/download actions. Rendered into #yml-viewer (inside the YAML modal)
+// via htmx.
 templ YMLViewer(channel string, yml string) {
 	<div class="yml-view">
 		<div class="yml-view-head">
@@ -44,64 +52,85 @@ templ YMLViewer(channel string, yml string) {
 templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 	@Layout("Tellarr — Indexers", "indexers") {
 		<article>
-			<h2>Indexer channels</h2>
+			<div class="page-head">
+				<h2>Indexer channels</h2>
+			</div>
 			<p>Channels marked as indexers are searched by Sonarr/Radarr through the Torznab feeds.</p>
 			@Flash(errMsg, "error-msg")
 			@Flash(msg, "ok-msg")
 			if len(channels) == 0 {
 				<p>No channels found. Connect a Telegram account first.</p>
 			} else {
-			<div class="table-wrap">
-				<table class="responsive">
-					<thead>
-						<tr><th>Channel</th><th>Indexer</th><th></th><th>Prowlarr</th></tr>
-					</thead>
-					<tbody>
-						for _, ch := range channels {
-							<tr>
-								<td data-label="Channel">{ ch.Name }</td>
-								<td data-label="Indexer">
-									if ch.IsIndex {
-										<span class="pill pill-done"><span class="pill-dot"></span>Enabled</span>
-									} else {
-										<span class="pill pill-idle"><span class="pill-dot"></span>Disabled</span>
-									}
-								</td>
-								<td data-label="Toggle">
-									<form method="post" action="/ui/indexers/toggle" class="inline-form">
-										<input type="hidden" name="name" value={ ch.Name }/>
+				<div class="table-toolbar">
+					<div class="search-box" role="search">
+						@iconSearch()
+						<input type="search" placeholder="Filter channels…" oninput="tellarrFilter(this)" data-target="indexers-table" aria-label="Filter channels"/>
+					</div>
+				</div>
+				<div class="table-wrap" id="indexers-table">
+					<table class="responsive">
+						<thead>
+							<tr><th>Channel</th><th>Indexer</th><th></th><th>Prowlarr</th></tr>
+						</thead>
+						<tbody>
+							for _, ch := range channels {
+								<tr data-search={ channelSearchText(ch.Name, ch.IsIndex) }>
+									<td data-label="Channel">{ ch.Name }</td>
+									<td data-label="Indexer">
 										if ch.IsIndex {
-											<button type="submit" class="icon-btn icon-btn-active" title="Disable indexer" aria-label="Disable indexer">@iconPower()</button>
+											<span class="pill pill-done"><span class="pill-dot"></span>Enabled</span>
 										} else {
-											<button type="submit" class="icon-btn" title="Enable indexer" aria-label="Enable indexer">@iconPower()</button>
+											<span class="pill pill-idle"><span class="pill-dot"></span>Disabled</span>
 										}
-									</form>
-								</td>
-								<td class="actions" data-label="Prowlarr">
-									if ch.IsIndex {
-										<form method="post" action="/ui/indexers/prowlarr" class="inline-form">
+									</td>
+									<td data-label="Toggle">
+										<form method="post" action="/ui/indexers/toggle" class="inline-form">
 											<input type="hidden" name="name" value={ ch.Name }/>
-											<button type="submit" class="icon-btn icon-btn-primary" title="Add to Prowlarr" aria-label="Add to Prowlarr">@iconPlus()</button>
+											if ch.IsIndex {
+												<button type="submit" class="icon-btn icon-btn-active" title="Disable indexer" aria-label="Disable indexer">@iconPower()</button>
+											} else {
+												<button type="submit" class="icon-btn" title="Enable indexer" aria-label="Enable indexer">@iconPower()</button>
+											}
 										</form>
-										<button
-											type="button"
-											class="icon-btn"
-											title="Show YAML definition"
-											aria-label="Show YAML definition"
-											hx-get={ templ.URL("/ui/indexers/prowlarr/yml/view?name=" + url.QueryEscape(ch.Name)) }
-											hx-target="#yml-viewer"
-											hx-swap="innerHTML"
-										>@iconCode()</button>
-										<a class="icon-btn" title="Download YML definition" aria-label="Download YML definition" href={ templ.URL("/ui/indexers/prowlarr/yml?name=" + url.QueryEscape(ch.Name)) }>@iconFileDown()</a>
-									}
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</div>
+									</td>
+									<td class="actions" data-label="Prowlarr">
+										if ch.IsIndex {
+											<form method="post" action="/ui/indexers/prowlarr" class="inline-form">
+												<input type="hidden" name="name" value={ ch.Name }/>
+												<button type="submit" class="icon-btn icon-btn-primary" title="Add to Prowlarr" aria-label="Add to Prowlarr">@iconPlus()</button>
+											</form>
+											<button
+												type="button"
+												class="icon-btn"
+												title="Show YAML definition"
+												aria-label="Show YAML definition"
+												hx-get={ templ.URL("/ui/indexers/prowlarr/yml/view?name=" + url.QueryEscape(ch.Name)) }
+												hx-target="#yml-viewer"
+												hx-swap="innerHTML"
+											>@iconCode()</button>
+											<a class="icon-btn" title="Download YML definition" aria-label="Download YML definition" href={ templ.URL("/ui/indexers/prowlarr/yml?name=" + url.QueryEscape(ch.Name)) }>@iconFileDown()</a>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<div id="indexers-table-noresults" class="empty-state" hidden>
+					@iconSearch()
+					<p>No channels match your search.</p>
+				</div>
 				<p><em>Add to Prowlarr registers a Generic Torznab indexer via the Prowlarr API (set <code>PROWLARR_URL</code> + <code>PROWLARR_API_KEY</code>). Alternatively set <code>PROWLARR_DEFINITIONS_DIR</code> to write a custom definition file, or copy/download the YML into Prowlarr's <code>Definitions/Custom</code> folder yourself.</em></p>
-				<div id="yml-viewer"></div>
+
+				<dialog id="modal-yml" class="modal modal-wide">
+					<div class="modal-frame">
+						<header class="modal-head">
+							<strong class="modal-title">Cardigann definition</strong>
+							<button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('modal-yml')">@iconX()</button>
+						</header>
+						<div id="yml-viewer"></div>
+					</div>
+				</dialog>
 			}
 		</article>
 	}

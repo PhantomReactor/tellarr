@@ -29,7 +29,7 @@ templ Layout(title string, active string) {
 							</a>
 						</li>
 					</ul>
-					<ul>
+					<ul class="nav-links">
 						<li><a href="/ui/telegram" class={ "nav-link", templ.KV("active", active == "telegram") }>Telegram</a></li>
 						<li><a href="/ui/indexers" class={ "nav-link", templ.KV("active", active == "indexers") }>Indexers</a></li>
 						<li><a href="/ui/downloads" class={ "nav-link", templ.KV("active", active == "downloads") }>Downloads</a></li>
@@ -50,6 +50,6 @@ templ Layout(title string, active string) {
 
 templ Flash(msg string, kind string) {
 	if msg != "" {
-		<article class={ kind }><p>{ msg }</p></article>
+		<article class={ "flash", "auto-dismiss", kind }><p>{ msg }</p></article>
 	}
 }

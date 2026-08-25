@@ -29,12 +29,74 @@ function fallbackCopy(ta) {
   } catch (e) {}
 }
 
-// Make htmx swaps visible: scroll swapped-in content into view and surface
-// failed requests instead of failing silently.
+// --- Modals -----------------------------------------------------------------
+
+function openModal(id) {
+  var d = document.getElementById(id);
+  if (d && typeof d.showModal === "function") d.showModal();
+}
+
+function closeModal(id) {
+  var d = document.getElementById(id);
+  if (d && typeof d.close === "function") d.close();
+}
+
+// Click on the backdrop (the dialog element itself) closes the modal.
+document.addEventListener("click", function (e) {
+  var d = e.target instanceof Element ? e.target.closest("dialog") : null;
+  if (d && e.target === d) d.close();
+});
+
+// Delete confirmation: trash buttons carry data-del-id and rewire the two
+// forms inside #modal-delete before showing it.
+function askDelete(btn, ev) {
+  ev.preventDefault();
+  var id = btn.getAttribute("data-del-id");
+  if (!id) return;
+  var base = "/ui/downloads/" + encodeURIComponent(id) + "/";
+  var rec = document.getElementById("del-form-record");
+  var files = document.getElementById("del-form-files");
+  if (rec) rec.action = base + "delete";
+  if (files) files.action = base + "delete-files";
+  openModal("modal-delete");
+}
+
+// --- Client-side search ------------------------------------------------------
+
+var tellarrFilters = {};
+
+function tellarrFilter(input) {
+  var target = input.getAttribute("data-target");
+  if (!target) return;
+  tellarrFilters[target] = input.value.trim().toLowerCase();
+  applyFilter(target);
+}
+
+function applyFilter(tableId) {
+  var root = document.getElementById(tableId);
+  if (!root) return;
+  var q = tellarrFilters[tableId] || "";
+  var rows = root.querySelectorAll("tr[data-search]");
+  var visible = 0;
+  rows.forEach(function (row) {
+    var match = !q || row.getAttribute("data-search").indexOf(q) !== -1;
+    row.style.display = match ? "" : "none";
+    if (match) visible++;
+  });
+  var empty = document.getElementById(tableId + "-noresults");
+  if (empty) empty.hidden = !(q && rows.length > 0 && visible === 0);
+}
+
+// Make htmx swaps work with modals/filters: surface failed requests, open the
+// YAML modal once its content arrives, and reapply active search filters.
 document.addEventListener("htmx:afterSwap", function (e) {
   var t = e.detail && e.detail.target;
-  if (t && t.id === "yml-viewer" && t.firstElementChild) {
-    t.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (!t) return;
+  if (t.id === "yml-viewer" && t.firstElementChild) {
+    openModal("modal-yml");
+  }
+  if (t.id === "downloads-table") {
+    applyFilter("downloads-table");
   }
 });
 
@@ -64,3 +126,15 @@ function showToast(message, isError) {
     el.className = "toast";
   }, 4000);
 }
+
+// Flash messages (ok/error banners after redirects) dismiss themselves.
+window.addEventListener("DOMContentLoaded", function () {
+  setTimeout(function () {
+    document.querySelectorAll(".flash.auto-dismiss").forEach(function (el) {
+      el.classList.add("dismissed");
+      setTimeout(function () {
+        el.remove();
+      }, 350);
+    });
+  }, 5000);
+});

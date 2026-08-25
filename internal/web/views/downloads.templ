@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"strings"
 )
 
 type DownloadRowVM struct {
@@ -106,6 +107,14 @@ templ iconDownload() {
 	<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
 }
 
+templ iconSearch() {
+	<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+}
+
+templ iconX() {
+	<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+}
+
 // --- badges ---
 
 templ statePill(state string) {
@@ -127,7 +136,7 @@ templ DownloadsTable(rows []DownloadRowVM) {
 	<div
 		id="downloads-table"
 		hx-get="/ui/downloads/table"
-		hx-trigger="every 2s [!document.querySelector('details.menu[open]')]"
+		hx-trigger="every 2s [!document.querySelector('dialog[open]')]"
 		hx-swap="outerHTML"
 	>
 		if len(rows) == 0 {
@@ -151,7 +160,7 @@ templ DownloadsTable(rows []DownloadRowVM) {
 					</thead>
 					<tbody>
 						for _, row := range rows {
-							<tr>
+							<tr data-search={ strings.ToLower(row.Name + " " + row.Category + " " + row.Origin + " " + row.State) }>
 								<td data-label="Name" class="cell-name">
 									<span class="dl-name" title={ row.Name }>{ row.Name }</span>
 									if row.Category != "" {
@@ -197,31 +206,19 @@ templ DownloadsTable(rows []DownloadRowVM) {
 											<button type="submit" class="icon-btn icon-btn-primary" title="Resume" aria-label="Resume">@iconPlay()</button>
 										</form>
 									}
-									@deleteMenu(row.ID)
+									<button type="button" class="icon-btn icon-btn-danger" title="Delete" aria-label="Delete" onclick="askDelete(this, event)" data-del-id={ row.ID }>@iconTrash()</button>
 								</td>
 							</tr>
 						}
 					</tbody>
 				</table>
 			</div>
+			<div id="downloads-table-noresults" class="empty-state" hidden>
+				@iconSearch()
+				<p>No downloads match your search.</p>
+			</div>
 		}
 	</div>
-}
-
-// deleteMenu renders the trash icon as a dropdown offering to remove just
-// the record or also wipe the files from disk.
-templ deleteMenu(id string) {
-	<details class="menu">
-		<summary class="icon-btn icon-btn-danger" title="Delete" aria-label="Delete">@iconTrash()</summary>
-		<div class="menu-body">
-			<form method="post" action={ templ.URL("/ui/downloads/" + id + "/delete") }>
-				<button type="submit" class="menu-item">Remove record only</button>
-			</form>
-			<form method="post" action={ templ.URL("/ui/downloads/" + id + "/delete-files") }>
-				<button type="submit" class="menu-item menu-item-danger">Delete with files</button>
-			</form>
-		</div>
-	</details>
 }
 
 templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
@@ -229,26 +226,63 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 		<article>
 			<div class="page-head">
 				<h2>Downloads</h2>
-				<details class="add-download">
-					<summary>@iconPlus() <span>Add download</span></summary>
-					<form method="post" action="/ui/downloads/add">
-						<div class="grid">
-							<label>
-								Message link (t.me/c/channel/message)
-								<input type="text" name="link" placeholder="https://t.me/c/1234567/89" required/>
-							</label>
-							<label>
-								Save as filename
-								<input type="text" name="filename" placeholder="Show.S01E01.mkv" required/>
-							</label>
-						</div>
-						<button type="submit" class="compact-btn">@iconDownload() Start download</button>
-					</form>
-				</details>
+				<button type="button" class="compact-btn" onclick="openModal('modal-add-download')">@iconPlus() <span>Add download</span></button>
 			</div>
 			@Flash(errMsg, "error-msg")
 			@Flash(msg, "ok-msg")
+			if len(rows) > 0 {
+				<div class="table-toolbar">
+					<div class="search-box" role="search">
+						@iconSearch()
+						<input type="search" placeholder="Filter by name, category, source…" oninput="tellarrFilter(this)" data-target="downloads-table" aria-label="Filter downloads"/>
+					</div>
+				</div>
+			}
 			@DownloadsTable(rows)
+
+			<dialog id="modal-add-download" class="modal">
+				<div class="modal-frame">
+					<header class="modal-head">
+						<strong class="modal-title">Add download</strong>
+						<button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('modal-add-download')">@iconX()</button>
+					</header>
+					<form method="post" action="/ui/downloads/add">
+						<label>
+							Message link (t.me/c/channel/message)
+							<input type="text" name="link" placeholder="https://t.me/c/1234567/89" required/>
+						</label>
+						<label>
+							Save as filename
+							<input type="text" name="filename" placeholder="Show.S01E01.mkv" required/>
+						</label>
+						<footer class="modal-foot">
+							<button type="button" class="compact-btn outline" onclick="closeModal('modal-add-download')">Cancel</button>
+							<button type="submit" class="compact-btn">@iconDownload() Start download</button>
+						</footer>
+					</form>
+				</div>
+			</dialog>
+
+			<dialog id="modal-delete" class="modal">
+				<div class="modal-frame">
+					<header class="modal-head">
+						<strong class="modal-title">Delete download?</strong>
+						<button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('modal-delete')">@iconX()</button>
+					</header>
+					<p class="muted modal-hint">Remove just the record, or wipe the downloaded files from disk too. This cannot be undone.</p>
+					<div class="stack">
+						<form method="post" action="" id="del-form-record">
+							<button type="submit" class="btn-block outline">Remove record only</button>
+						</form>
+						<form method="post" action="" id="del-form-files">
+							<button type="submit" class="btn-block btn-danger">Delete with files</button>
+						</form>
+					</div>
+					<footer class="modal-foot">
+						<button type="button" class="compact-btn outline" onclick="closeModal('modal-delete')">Cancel</button>
+					</footer>
+				</div>
+			</dialog>
 		</article>
 	}
 }
