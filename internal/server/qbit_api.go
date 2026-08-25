@@ -691,7 +691,25 @@ func (s *Server) refreshAriaRows(rows []dbm.TorrentDownload) {
 		st, err := aria.TellStatus(ctx, row.RemoteGid)
 		cancel()
 		if err != nil {
-			slog.Error("aria2 status failed", "gid", row.RemoteGid, "err", err)
+			if !IsGidNotFound(err) {
+				slog.Error("aria2 status failed", "gid", row.RemoteGid, "err", err)
+				continue
+			}
+			// The daemon no longer knows this gid (restart or pruned
+			// result). If the file landed on disk the download finished;
+			// otherwise fail the row so it stops being polled.
+			state := dbm.StateError
+			errMsg := "aria2 job lost: gid no longer known to the daemon"
+			if row.ContentPath != "" {
+				if _, statErr := os.Stat(row.ContentPath); statErr == nil {
+					state = dbm.StateDone
+					errMsg = ""
+				}
+			}
+			if updErr := s.downloadRepo.UpdateAriaProgress(row.ID, row.Written, row.Total, state, row.ContentPath, row.Filename, errMsg); updErr != nil {
+				slog.Error("failed to persist aria2 progress", "id", row.ID, "err", updErr)
+			}
+			row.State = state
 			continue
 		}
 		newState, _ := MapAriaStatus(st.Status)
@@ -886,7 +904,13 @@ func qbResume(qb *QBitRealClient, hashes []string) error { return qb.Resume(hash
 func ariaEach(a *Aria2Client, hashes []string, fn func(*Aria2Client, string) error) error {
 	var firstErr error
 	for _, h := range hashes {
-		if err := fn(a, h); err != nil && firstErr == nil {
+		err := fn(a, h)
+		if err == nil || IsGidNotFound(err) {
+			// An unknown gid means the job is already gone from the
+			// daemon; nothing left to do for it.
+			continue
+		}
+		if firstErr == nil {
 			firstErr = err
 		}
 	}

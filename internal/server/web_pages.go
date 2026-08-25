@@ -527,7 +527,7 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 		if row.Origin == models.OriginAria2 && row.RemoteGid != "" {
 			if aria := NewAria2ClientFromEnv(); aria.Configured() {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				if err := aria.Remove(ctx, row.RemoteGid); err != nil {
+				if err := aria.Remove(ctx, row.RemoteGid); err != nil && !IsGidNotFound(err) {
 					slog.Warn("aria2 remove failed", "gid", row.RemoteGid, "err", err)
 				}
 				cancel()

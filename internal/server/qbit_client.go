@@ -51,6 +51,17 @@ func (q *QBitRealClient) login() error {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	// Stock qBittorrent answers 200 "Ok." plus an SID session cookie.
+	// Middleboxes (reverse proxies, gateways) sometimes strip the body or
+	// collapse the reply to 204; an issued SID cookie still proves login,
+	// so accept that before falling back to the strict check.
+	if u, err := url.Parse(q.baseURL); err == nil {
+		for _, c := range q.http.Jar.Cookies(u) {
+			if c.Name == "SID" {
+				return nil
+			}
+		}
+	}
 	if resp.StatusCode != http.StatusOK || string(body) != "Ok." {
 		return fmt.Errorf("login failed (%s): %q at %s", resp.Status, string(body), q.baseURL+"/api/v2/auth/login")
 	}
