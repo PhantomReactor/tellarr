@@ -461,19 +461,29 @@ func firstNonEmpty(vals ...string) string {
 func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath string) error {
 	dialogId, messageId, isTorrent, ok := s.isOwnRef(raw)
 	if !ok {
-		// A raw provider link pasted directly into the qBittorrent UI.
-		if linkresolver.Name(raw) != "" {
-			return s.startExternalDownload(ctx, 0, 0, 0, nil, raw, category, savePath)
-		}
-		return fmt.Errorf("unsupported url")
+		// Anything else a client pastes (provider pages, magnets, .torrent
+		// URLs, telegra.ph posts, direct files) goes through the universal
+		// dispatcher.
+		_, _, err := s.addAnyLink(ctx, raw, "", category, savePath)
+		return err
 	}
+	_, _, err := s.addTellarrRef(ctx, raw, dialogId, messageId, isTorrent, category, savePath)
+	return err
+}
+
+// addTellarrRef starts the download backing one of tellarr's own synthetic
+// refs ({BASE}/d/{dialog}/{message}[.torrent] or an x.tellarr magnet).
+// Message media streams via our Telegram downloader; link-only posts resolve
+// their aggregator URL through aria2; genuine .torrent documents are handed
+// to the real qBittorrent.
+func (s *Server) addTellarrRef(ctx context.Context, raw string, dialogId, messageId int64, isTorrent bool, category, savePath string) (string, string, error) {
 	dialog, err := s.dialogRepo.GetDialogsByDialogId(dialogId)
 	if err != nil || dialog == nil {
-		return fmt.Errorf("dialog %d not found", dialogId)
+		return "", "", fmt.Errorf("dialog %d not found", dialogId)
 	}
 	t, msg, err := s.resolveMessage(ctx, dialogId, messageId)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
 	doc := documentOfMessage(msg)
@@ -489,11 +499,11 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 			// No pinned link (legacy magnet): fall back to the first link.
 			urls := providerURLsInMessage(msg)
 			if len(urls) == 0 {
-				return fmt.Errorf("message %d/%d has no downloadable content", dialogId, messageId)
+				return "", "", fmt.Errorf("message %d/%d has no downloadable content", dialogId, messageId)
 			}
 			told = urls[0]
 		}
-		return s.startExternalDownload(ctx, dialog.SessionId, dialogId, messageId, msg, told, category, savePath)
+		return s.startExternalDownload(ctx, dialog.SessionId, dialogId, messageId, msg, told, category, savePath, "")
 
 	case isTorrent:
 		// Real torrent file: pull bytes and hand off to the genuine client.
@@ -501,7 +511,7 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 		dl := newDownloader()
 		api, err := t.downloadAPI(t.context, doc.DCID)
 		if err != nil {
-			return fmt.Errorf("download pool unavailable: %w", err)
+			return "", "", fmt.Errorf("download pool unavailable: %w", err)
 		}
 		_, err = dl.Download(api, &tg.InputDocumentFileLocation{
 			ID:            doc.ID,
@@ -509,22 +519,28 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 			FileReference: doc.FileReference,
 		}).Stream(t.context, buf)
 		if err != nil {
-			return fmt.Errorf("fetching torrent bytes failed: %w", err)
+			return "", "", fmt.Errorf("fetching torrent bytes failed: %w", err)
 		}
 		hash, err := s.forwardTorrentBytes(buf.Bytes(), category, savePath)
 		if err != nil {
-			return err
+			return "", "", err
 		}
-		return s.recordRemoteDownload(dialogId, messageId, filename+".torrent", category, savePath, dialog.SessionId, hash)
+		if err := s.recordRemoteDownload(dialogId, messageId, filename+".torrent", category, savePath, dialog.SessionId, hash); err != nil {
+			return "", "", err
+		}
+		return remoteRowID(hash, dialogId, messageId, filename+".torrent"), filename + ".torrent", nil
 
 	default:
 		// Direct media: start our own downloader under the fake hash.
 		api, err := t.downloadAPI(t.context, doc.DCID)
 		if err != nil {
-			return fmt.Errorf("download pool unavailable: %w", err)
+			return "", "", fmt.Errorf("download pool unavailable: %w", err)
 		}
-		_, err = s.dm.Start(t.context, api, doc, dialog.SessionId, dialogId, messageId, filename, category, savePath)
-		return err
+		row, err := s.dm.Start(t.context, api, doc, dialog.SessionId, dialogId, messageId, filename, category, savePath)
+		if err != nil {
+			return "", "", err
+		}
+		return row.ID, row.Filename, nil
 	}
 }
 
@@ -550,9 +566,9 @@ func externalHash(rawURL string) string {
 
 // startExternalDownload records an aria2-backed download row immediately and
 // resolves + hands off the link in the background so qBittorrent gets a fast
-// "Ok." response.
-func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId, messageId int64, msg *tg.Message, providerURL, category, savePath string) error {
-	title := titleForLink(msg, providerURL)
+// "Ok." response. nameOverride (optional) pins the saved filename.
+func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId, messageId int64, msg *tg.Message, providerURL, category, savePath, nameOverride string) (string, string, error) {
+	title := firstNonEmpty(strings.TrimSpace(nameOverride), titleForLink(msg, providerURL))
 	var id string
 	if dialogId != 0 || messageId != 0 {
 		id = SyntheticHash(dialogId, messageId, title)
@@ -560,7 +576,7 @@ func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId,
 		id = externalHash(providerURL)
 	}
 	if existing, err := s.downloadRepo.Get(id); err == nil && existing != nil && existing.State == dbm.StateDownloading {
-		return nil
+		return id, existing.Filename, nil
 	}
 	if strings.TrimSpace(savePath) == "" {
 		savePath = s.dm.baseDir
@@ -581,23 +597,40 @@ func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId,
 		UpdatedAt: now,
 	}
 	if err := s.downloadRepo.Create(row); err != nil {
-		return err
+		return "", "", err
 	}
-	go s.runExternalDownload(context.Background(), id, providerURL, savePath)
-	return nil
+	go s.runExternalDownload(context.Background(), id, providerURL, savePath, strings.TrimSpace(nameOverride))
+	return id, title, nil
 }
 
-// runExternalDownload resolves the aggregator page and submits the direct
-// link to aria2c. Runs on its own goroutine; results land in DOWNLOADS.
-func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir string) {
-	res, err := linkresolver.Resolve(ctx, providerURL)
-	if err != nil {
-		slog.Error("external link resolve failed", "url", providerURL, "err", err)
-		_ = s.downloadRepo.UpdateProgress(id, 0, dbm.StateError, err.Error())
-		return
+// runExternalDownload turns the stored link into an aria2 job. Known
+// aggregator pages are resolved into direct URLs first; everything else
+// goes to aria2 as-is (direct files and magnets are native addUri inputs).
+func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir, nameOverride string) {
+	var (
+		finalURL string
+		headers  map[string]string
+		size     int64
+		name     string
+	)
+	if linkresolver.Name(providerURL) != "" {
+		res, err := linkresolver.Resolve(ctx, providerURL)
+		if err != nil {
+			slog.Error("external link resolve failed", "url", providerURL, "err", err)
+			_ = s.downloadRepo.UpdateProgress(id, 0, dbm.StateError, err.Error())
+			return
+		}
+		finalURL, headers, size = res.URL, res.Headers, res.Size
+		name = res.Filename
+	} else {
+		finalURL = providerURL
+		name = linkresolver.FileNameFromURL(providerURL)
 	}
+	if override := sanitizeExternalFilename(nameOverride); override != "" && override != "download.bin" {
+		name = override
+	}
+	name = sanitizeExternalFilename(name)
 
-	name := sanitizeExternalFilename(res.Filename)
 	// aria2c resolves relative dirs against its own working directory, and
 	// rows persisted by older builds may carry relative or cwd-joined
 	// garbage (e.g. /data/tellarr/data/downloads/...). Anything outside the
@@ -610,19 +643,19 @@ func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir s
 		dir = s.dm.baseDir
 	}
 	opts := Aria2Options{Dir: dir, Out: name}
-	for k, v := range res.Headers {
+	for k, v := range headers {
 		opts.Headers = append(opts.Headers, k+": "+v)
 	}
 
 	aria := NewAria2ClientFromEnv()
-	gid, err := aria.AddURI(ctx, res.URL, opts)
+	gid, err := aria.AddURI(ctx, finalURL, opts)
 	if err != nil {
-		slog.Error("aria2 addUri failed", "url", res.URL, "err", err)
+		slog.Error("aria2 addUri failed", "url", finalURL, "err", err)
 		_ = s.downloadRepo.UpdateProgress(id, 0, dbm.StateError, err.Error())
 		return
 	}
 	contentPath := filepath.Join(dir, name)
-	if err := s.downloadRepo.UpdateAriaProgress(id, 0, res.Size, dbm.StateDownloading, contentPath, name, ""); err != nil {
+	if err := s.downloadRepo.UpdateAriaProgress(id, 0, size, dbm.StateDownloading, contentPath, name, ""); err != nil {
 		slog.Error("failed to persist aria2 download", "id", id, "err", err)
 	}
 	if err := s.downloadRepo.SetRemoteGid(id, gid); err != nil {

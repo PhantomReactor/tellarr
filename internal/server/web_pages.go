@@ -419,54 +419,24 @@ func (s *Server) webDownloadAdd(w http.ResponseWriter, r *http.Request) {
 	link := strings.TrimSpace(r.FormValue("link"))
 	filename := strings.TrimSpace(r.FormValue("filename"))
 
-	channelId, messageId, ok := parseTgLink(link)
-	if !ok {
-		redirectFlash(w, r, "/ui/downloads", "", "unrecognized link format")
-		return
-	}
-	dialog, err := s.dialogRepo.GetDialogsByDialogId(channelId)
-	if err != nil || dialog == nil {
-		redirectFlash(w, r, "/ui/downloads", "", "channel not indexed or unknown")
-		return
-	}
-	t, err := s.getTelegramClient(dialog.SessionId)
+	id, name, err := s.addAnyLink(r.Context(), link, filename, "", "")
 	if err != nil {
-		redirectFlash(w, r, "/ui/downloads", "", "telegram session unavailable")
+		slog.Warn("add download rejected", "link", link, "err", err)
+		redirectFlash(w, r, "/ui/downloads", "", flashErrText(err))
 		return
 	}
-	doc, err := s.fetchDocument(t, channelId, messageId)
-	if err != nil {
-		redirectFlash(w, r, "/ui/downloads", "", "media not found in message")
-		return
-	}
-	if filename == "" {
-		filename = documentFilename(doc, fmt.Sprintf("%d_%d", channelId, messageId))
-	}
-	api, err := t.downloadAPI(t.context, doc.DCID)
-	if err != nil {
-		redirectFlash(w, r, "/ui/downloads", "", "download pool unavailable")
-		return
-	}
-	if _, err := s.dm.Start(t.context, api, doc, dialog.SessionId, channelId, messageId, filename, "", ""); err != nil {
-		redirectFlash(w, r, "/ui/downloads", "", "download could not be started")
-		return
-	}
-	redirectFlash(w, r, "/ui/downloads", "download started: "+filename, "")
+	slog.Info("download added", "id", id, "name", name)
+	redirectFlash(w, r, "/ui/downloads", "download started: "+name, "")
 }
 
-func parseTgLink(link string) (channelId, messageId int64, ok bool) {
-	link = strings.TrimSpace(link)
-	idx := strings.LastIndex(link, "/c/")
-	if idx < 0 {
-		return 0, 0, false
+// flashErrText trims an error for display in the redirect flash message.
+func flashErrText(err error) string {
+	m := err.Error()
+	const max = 240
+	if len(m) > max {
+		m = m[:max] + "…"
 	}
-	parts := strings.Split(strings.TrimPrefix(link[idx:], "/c/"), "/")
-	if len(parts) < 2 {
-		return 0, 0, false
-	}
-	channelId, err1 := strconv.ParseInt(parts[0], 10, 64)
-	messageId, err2 := strconv.ParseInt(parts[1], 10, 64)
-	return channelId, messageId, err1 == nil && err2 == nil
+	return m
 }
 
 func documentFilename(doc *tg.Document, fallback string) string {

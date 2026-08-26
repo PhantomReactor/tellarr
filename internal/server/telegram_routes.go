@@ -351,63 +351,65 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
-	sessionId, err := strconv.ParseInt(r.URL.Query().Get("sessionId"), 10, 64)
-	if err != nil {
-		slog.Error("error while getting sessionId", "error", err)
-		models.NewResponse(w, &models.Response{Message: "invalid sessionId"}, http.StatusBadRequest)
-		return
-	}
 	filename := r.URL.Query().Get("filename")
 	downloadLink := r.URL.Query().Get("downloadLink")
-	parts := strings.Split(downloadLink, "c/")
-	if len(parts) < 2 {
-		models.NewResponse(w, &models.Response{Message: "invalid download link"}, http.StatusBadRequest)
-		return
-	}
-	channelAndMessageId := strings.Split(parts[1], "/")
-	if len(channelAndMessageId) < 2 {
-		models.NewResponse(w, &models.Response{Message: "invalid download link"}, http.StatusBadRequest)
-		return
-	}
-	channelId, _ := strconv.ParseInt(channelAndMessageId[0], 10, 64)
-	messageId, _ := strconv.ParseInt(channelAndMessageId[1], 10, 64)
-	t, err := s.getTelegramClient(sessionId)
-	if err != nil {
-		slog.Error("error while starting telegram client", "error", err)
-		models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
-		return
-	}
-	dialog, err := s.dialogRepo.GetDialogsByDialogId(channelId)
-	if err != nil {
-		slog.Error("unable to find fetch dialog", "err", err)
-		models.NewResponse(w, &models.Response{Message: "unable to fetch dialogs"}, http.StatusInternalServerError)
-		return
-	}
-	if dialog == nil {
-		slog.Error(fmt.Sprintf("dialogs not found for %d", channelId))
-		models.NewResponse(w, &models.Response{Message: "dialogs not found"}, http.StatusInternalServerError)
-		return
-	}
-	doc, err := s.fetchDocument(t, channelId, messageId)
-	if err != nil {
-		slog.Error("unable to resolve document", "link", downloadLink, "err", err)
-		models.NewResponse(w, &models.Response{Message: "media not found"}, http.StatusInternalServerError)
+
+	// Telegram message links keep the legacy sessionId-driven flow.
+	if ref, ok := parseTgLink(downloadLink); ok && ref.Username == "" {
+		sessionId, err := strconv.ParseInt(r.URL.Query().Get("sessionId"), 10, 64)
+		if err != nil {
+			slog.Error("error while getting sessionId", "error", err)
+			models.NewResponse(w, &models.Response{Message: "invalid sessionId"}, http.StatusBadRequest)
+			return
+		}
+		t, err := s.getTelegramClient(sessionId)
+		if err != nil {
+			slog.Error("error while starting telegram client", "error", err)
+			models.NewResponse(w, &models.Response{Message: "error while starting telegram client"}, http.StatusInternalServerError)
+			return
+		}
+		dialog, err := s.dialogRepo.GetDialogsByDialogId(ref.ChannelId)
+		if err != nil {
+			slog.Error("unable to find fetch dialog", "err", err)
+			models.NewResponse(w, &models.Response{Message: "unable to fetch dialogs"}, http.StatusInternalServerError)
+			return
+		}
+		if dialog == nil {
+			slog.Error(fmt.Sprintf("dialogs not found for %d", ref.ChannelId))
+			models.NewResponse(w, &models.Response{Message: "dialogs not found"}, http.StatusInternalServerError)
+			return
+		}
+		doc, err := s.fetchDocument(t, ref.ChannelId, ref.MessageId)
+		if err != nil {
+			slog.Error("unable to resolve document", "link", downloadLink, "err", err)
+			models.NewResponse(w, &models.Response{Message: "media not found"}, http.StatusInternalServerError)
+			return
+		}
+
+		api, err := t.downloadAPI(t.context, doc.DCID)
+		if err != nil {
+			slog.Error("error while creating download pool", "err", err)
+			models.NewResponse(w, &models.Response{Message: "download pool unavailable"}, http.StatusInternalServerError)
+			return
+		}
+		row, err := s.dm.Start(t.context, api, doc, sessionId, ref.ChannelId, ref.MessageId, filename, "", "")
+		if err != nil {
+			slog.Error(fmt.Sprintf("cannot download %s", downloadLink), "err", err)
+			models.NewResponse(w, &models.Response{Message: "download failed"}, http.StatusInternalServerError)
+			return
+		}
+		models.NewResponse(w, models.DownloadInfo{Id: row.ID, Name: row.Filename, Percent: row.Percent()}, http.StatusOK)
 		return
 	}
 
-	api, err := t.downloadAPI(t.context, doc.DCID)
+	// Any other supported link (provider pages, magnets, .torrent URLs,
+	// telegra.ph posts, direct files).
+	id, name, err := s.addAnyLink(r.Context(), downloadLink, filename, "", "")
 	if err != nil {
-		slog.Error("error while creating download pool", "err", err)
-		models.NewResponse(w, &models.Response{Message: "download pool unavailable"}, http.StatusInternalServerError)
+		models.NewResponse(w, &models.Response{Message: "unsupported download link: " + err.Error()}, http.StatusBadRequest)
 		return
 	}
-	row, err := s.dm.Start(t.context, api, doc, sessionId, channelId, messageId, filename, "", "")
-	if err != nil {
-		slog.Error(fmt.Sprintf("cannot download %s", downloadLink), "err", err)
-		models.NewResponse(w, &models.Response{Message: "download failed"}, http.StatusInternalServerError)
-		return
-	}
-	models.NewResponse(w, models.DownloadInfo{Id: row.ID, Name: row.Filename, Percent: row.Percent()}, http.StatusOK)
+	models.NewResponse(w, models.DownloadInfo{Id: id, Name: name}, http.StatusOK)
 }
 
 func (s *Server) Status(w http.ResponseWriter, r *http.Request) {

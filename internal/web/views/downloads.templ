@@ -250,12 +250,12 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 					</header>
 					<form method="post" action="/ui/downloads/add">
 						<label>
-							Message link (t.me/c/channel/message)
-							<input type="text" name="link" placeholder="https://t.me/c/1234567/89" required/>
+							Link — Telegram message, magnet, .torrent, hubcloud / gdflix / tmbcloud, telegra.ph or direct file URL
+							<input type="text" name="link" placeholder="https://t.me/c/1234567/89 · magnet:?xt=urn:btih:…" required/>
 						</label>
 						<label>
-							Save as filename
-							<input type="text" name="filename" placeholder="Show.S01E01.mkv" required/>
+							Save as filename <small class="muted">(optional — detected automatically when empty)</small>
+							<input type="text" name="filename" placeholder="Show.S01E01.mkv"/>
 						</label>
 						<footer class="modal-foot">
 							<button type="button" class="compact-btn outline" onclick="closeModal('modal-add-download')">Cancel</button>

@@ -140,6 +140,33 @@ func (q *QBitRealClient) AddTorrentBytes(torrent []byte, category, savePath stri
 	return nil
 }
 
+// AddMagnet forwards a magnet URI to the remote client.
+func (q *QBitRealClient) AddMagnet(magnet, category, savePath string) error {
+	if !q.Configured() {
+		return fmt.Errorf("real qbittorrent not configured")
+	}
+	if err := q.ensureLogin(); err != nil {
+		return err
+	}
+	form := url.Values{"urls": {magnet}}
+	if category != "" {
+		form.Set("category", category)
+	}
+	if savePath != "" {
+		form.Set("savepath", savePath)
+	}
+	resp, err := q.http.PostForm(q.baseURL+"/api/v2/torrents/add", form)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remote magnet add failed (%s): %s", resp.Status, string(b))
+	}
+	return nil
+}
+
 type RemoteTorrent struct {
 	Hash        string  `json:"hash"`
 	Name        string  `json:"name"`

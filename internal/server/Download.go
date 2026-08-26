@@ -536,7 +536,7 @@ func (s *Server) restartExternalDownload(row *db.TorrentDownload) (*db.TorrentDo
 			dir = s.dm.baseDir
 		}
 		_ = s.downloadRepo.SetState(row.ID, db.StateDownloading)
-		go s.runExternalDownload(context.Background(), row.ID, row.SourceURL, dir)
+		go s.runExternalDownload(context.Background(), row.ID, row.SourceURL, dir, row.Filename)
 		return row, nil
 	}
 	dialog, err := s.dialogRepo.GetDialogsByDialogId(row.DialogId)
@@ -566,7 +566,7 @@ func (s *Server) restartExternalDownload(row *db.TorrentDownload) (*db.TorrentDo
 		dir = s.dm.baseDir
 	}
 	_ = s.downloadRepo.SetState(row.ID, db.StateDownloading)
-	go s.runExternalDownload(context.Background(), row.ID, targetURL, dir)
+	go s.runExternalDownload(context.Background(), row.ID, targetURL, dir, row.Filename)
 	return row, nil
 }
 
