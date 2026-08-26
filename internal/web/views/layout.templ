@@ -4,6 +4,10 @@ templ iconLogo() {
 	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 12 3 20 7"></polyline><line x1="12" y1="3" x2="12" y2="21"></line><line x1="8" y1="21" x2="16" y2="21"></line></svg>
 }
 
+templ iconMenu() {
+	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+}
+
 templ Layout(title string, active string) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
@@ -28,8 +32,11 @@ templ Layout(title string, active string) {
 								<strong>Tellarr</strong>
 							</a>
 						</li>
+						<li class="nav-burger-li">
+							<button type="button" class="icon-btn nav-burger" aria-label="Menu" aria-controls="nav-links" aria-expanded="false" onclick="toggleNav(this)">@iconMenu()</button>
+						</li>
 					</ul>
-					<ul class="nav-links">
+					<ul class="nav-links" id="nav-links">
 						<li><a href="/ui/telegram" class={ "nav-link", templ.KV("active", active == "telegram") }>Telegram</a></li>
 						<li><a href="/ui/indexers" class={ "nav-link", templ.KV("active", active == "indexers") }>Indexers</a></li>
 						<li><a href="/ui/downloads" class={ "nav-link", templ.KV("active", active == "downloads") }>Downloads</a></li>

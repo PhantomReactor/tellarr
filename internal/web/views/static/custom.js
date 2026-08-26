@@ -29,6 +29,15 @@ function fallbackCopy(ta) {
   } catch (e) {}
 }
 
+// --- Mobile nav ----------------------------------------------------------------
+
+function toggleNav(btn) {
+  var el = document.getElementById("nav-links");
+  if (!el) return;
+  var open = el.classList.toggle("open");
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 // --- Modals -----------------------------------------------------------------
 
 function openModal(id) {

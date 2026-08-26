@@ -207,6 +207,9 @@ nav a.active:not(.nav-link) {
   font-weight: 600;
 }
 
+/* Hamburger only exists on small screens (see media query below) */
+.nav-burger-li { display: none; }
+
 /* --- Cards / articles ----------------------------------------------------- */
 
 article {
@@ -816,7 +819,7 @@ td, th { overflow-wrap: anywhere; }
   main.container { padding-inline: 0.9rem; }
   article { padding: 1.1rem 0.95rem; border-radius: 14px; }
 
-  /* Nav: brand row on top, links in a swipeable single line below */
+  /* Nav: brand row with a hamburger; menu items collapse into a dropdown */
   nav {
     flex-direction: column;
     align-items: stretch;
@@ -824,26 +827,26 @@ td, th { overflow-wrap: anywhere; }
     padding: 0.6rem 0.8rem;
     margin-bottom: 1.25rem;
   }
-  nav ul:first-of-type { justify-content: center; }
+  .nav-burger-li { display: inline-flex; }
+  nav ul:first-of-type { justify-content: space-between; }
   ul.nav-links {
-    /* Pico centers nav uls via align-self, which would let this row keep its
-       full content width and widen the page once items overflow. Stretch it
-       instead so overflow-x below scrolls the row, not the document. */
+    display: none;
+    flex-direction: column;
     align-self: stretch;
-    max-width: 100%;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    margin: 0 -0.2rem;
-    padding: 0.1rem 0.2rem;
+    gap: 0.15rem;
+    margin: 0.4rem -0.2rem -0.2rem;
+    padding: 0.45rem 0.2rem 0.5rem;
+    border-top: 1px solid var(--tl-border);
   }
-  ul.nav-links::-webkit-scrollbar { display: none; }
-  ul.nav-links li { flex: 0 0 auto; }
+  ul.nav-links.open { display: flex; }
+  ul.nav-links li { width: 100%; }
+  ul.nav-links li .inline-form { display: flex; justify-content: flex-end; }
   nav ul li a.nav-link {
-    padding: 0.38rem 0.78rem;
-    font-size: 0.84rem;
+    justify-content: flex-start;
+    width: 100%;
+    padding: 0.6rem 0.95rem;
+    font-size: 0.95rem;
+    border-radius: 10px;
     white-space: nowrap;
   }
 
