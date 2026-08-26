@@ -6,16 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
-
 	"tellarr/internal/pkg/torznabcats"
+	"time"
 )
 
 // ProwlarrClient talks to a Prowlarr instance over its REST API.
@@ -38,15 +36,11 @@ func (p *ProwlarrClient) Configured() bool { return p.baseURL != "" && p.apiKey 
 // ProwlarrCategoriesForKeys resolves the form-submitted torznabcats.Category
 // keys (the Indexers page category picker, which allows selecting more than
 // one — an indexer can legitimately span multiple categories) to the
-// Prowlarr API's category field shape, defaulting to torznabcats.DefaultKey
-// when none are given/recognized.
-func ProwlarrCategoriesForKeys(keys []string) []map[string]any {
-	ids := torznabcats.IDsForKeys(keys)
-	out := make([]map[string]any, len(ids))
-	for i, id := range ids {
-		out[i] = map[string]any{"id": id}
-	}
-	return out
+// Prowlarr API's "categories" field shape — a plain array of category ids,
+// e.g. {"name": "categories", "value": [3000, 3010, 3040]} — defaulting to
+// torznabcats.DefaultKey when none are given/recognized.
+func ProwlarrCategoriesForKeys(keys []string) []int {
+	return torznabcats.IDsForKeys(keys)
 }
 
 type prowField struct {
@@ -117,8 +111,8 @@ func (p *ProwlarrClient) firstAppProfileID(ctx context.Context) int {
 // Prowlarr pointing at one of our feeds. Feed URL must look like
 // {base}/torznab/{channel}/api?apikey={key}. categories is the set of
 // Torznab category ids Prowlarr should list (and default-query) for this
-// indexer — see inferProwlarrCategories for how callers pick it.
-func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL string, categories []map[string]any) error {
+// indexer — see ProwlarrCategoriesForKeys for how callers build it.
+func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL string, categories []int) error {
 	fu, err := url.Parse(feedURL)
 	if err != nil {
 		return fmt.Errorf("bad feed url: %w", err)
@@ -191,7 +185,6 @@ func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL st
 		"tags":           []any{},
 		"fields":         fields,
 	}
-	slog.Info("payload", slog.Any("payload map", payload))
 	data, status, err := p.do(ctx, http.MethodPost, "indexer", payload)
 	if err != nil {
 		return fmt.Errorf("adding indexer: %w", err)

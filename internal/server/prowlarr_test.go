@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -100,6 +101,12 @@ func TestProwlarrAddTorznabCreatesThenUpdates(t *testing.T) {
 	}
 	if get("apiKey") != "tell123" {
 		t.Errorf("apiKey = %v", get("apiKey"))
+	}
+	// categories must be a plain array of ids — [3000, 3010, 3040], not
+	// [{"id": 3000}, ...] — that's the shape Prowlarr's API expects.
+	wantCats := []any{float64(2000), float64(2030), float64(2040)}
+	if cats, ok := get("categories").([]any); !ok || !reflect.DeepEqual(cats, wantCats) {
+		t.Errorf("categories = %#v, want %#v", get("categories"), wantCats)
 	}
 
 	// Second add must update the existing entry, not create a duplicate.
