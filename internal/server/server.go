@@ -27,6 +27,7 @@ type Server struct {
 	userRepo         database.UserRepository
 	tokenRepo        database.TokenRepository
 	downloadRepo     database.DownloadsRepository
+	settingsRepo     database.SettingsRepository
 	dm               *DownloadManager
 	appId            int
 	appHash          string
@@ -56,6 +57,7 @@ func NewServer() *http.Server {
 	userRepo := database.NewUserRespository(db.DB)
 	tokenRepo := database.NewTokenRepository(db.DB)
 	downloadRepo := database.NewDownloadsRepository(db.DB)
+	settingsRepo := database.NewSettingsRepository(db.DB)
 
 	downloadDir := os.Getenv("DOWNLOAD_DIR")
 	if strings.TrimSpace(downloadDir) == "" {
@@ -90,6 +92,19 @@ func NewServer() *http.Server {
 		telegramSessions[sessionId] = &TelegramSession{client: telegramClient, context: nil}
 
 	}
+	// A value saved on the Settings page overrides the env default; it also
+	// applies live at runtime, so this is just the starting point.
+	maxParallel := defaultMaxParallelDownloads()
+	if v, err := settingsRepo.Get(SettingMaxParallelDownloads); err != nil {
+		slog.Error("failed to read download settings, using default", "err", err)
+	} else if v != nil {
+		if n, ok := parseParallelSetting(*v); ok {
+			maxParallel = n
+		} else {
+			slog.Warn("invalid stored max parallel downloads, using default", "value", *v)
+		}
+	}
+
 	NewServer := &Server{
 		port:             port,
 		telegramSessions: telegramSessions,
@@ -99,7 +114,8 @@ func NewServer() *http.Server {
 		userRepo:         userRepo,
 		tokenRepo:        tokenRepo,
 		downloadRepo:     downloadRepo,
-		dm:               NewDownloadManager(downloadRepo, downloadDir),
+		settingsRepo:     settingsRepo,
+		dm:               NewDownloadManager(downloadRepo, downloadDir, maxParallel),
 		appId:            appId,
 		appHash:          appHash,
 	}

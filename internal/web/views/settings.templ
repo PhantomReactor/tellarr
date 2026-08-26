@@ -13,10 +13,20 @@ type IndexerFeedVM struct {
 	FeedURL string
 }
 
-templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, realQbURL string, qbTestResult string, msg string, errMsg string) {
+templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, realQbURL string, qbTestResult string, maxParallel int, msg string, errMsg string) {
 	@Layout("Tellarr — Settings", "settings") {
 		@Flash(errMsg, "error-msg")
 		@Flash(msg, "ok-msg")
+
+		<article>
+			<h2>Downloads</h2>
+			<form method="post" action="/ui/settings/downloads" class="inline-form">
+				<label for="max_parallel">Max parallel downloads</label>
+				<input type="number" id="max_parallel" name="max_parallel" min="1" max="16" step="1" value={ strconv.Itoa(maxParallel) } style="max-width:6rem"/>
+				<button type="submit" class="compact-btn">Save</button>
+			</form>
+			<p><em>How many files transfer at once (1–16). Extra downloads wait in a queue and start automatically as running ones finish. Applies immediately; survives restarts.</em></p>
+		</article>
 
 		<article>
 			<h2>API keys</h2>

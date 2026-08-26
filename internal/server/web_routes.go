@@ -59,6 +59,7 @@ func (s *Server) RegisterWebRoutes(r chi.Router) {
 		r.Post("/downloads/add", s.webDownloadAdd)
 		r.Post("/downloads/{id}/{action}", s.webDownloadAction)
 		r.Get("/settings", s.webSettings)
+		r.Post("/settings/downloads", s.webSettingsDownloads)
 		r.Post("/settings/tokens", s.webTokenCreate)
 		r.Post("/settings/tokens/{id}/delete", s.webTokenDelete)
 		r.Get("/settings/qbit/test", s.webQBitTest)

@@ -68,18 +68,67 @@ type DownloadManager struct {
 	baseDir string
 
 	// slots caps concurrent transfers; queue holds rows waiting for one.
-	slots   chan struct{}
+	slots   *slotLimiter
 	queue   []db.TorrentDownload
 	resolve DocResolver
 }
 
-func NewDownloadManager(repo database.DownloadsRepository, baseDir string) *DownloadManager {
+// slotLimiter is a counting semaphore whose cap can be changed at runtime
+// (Settings page). Acquire is non-blocking: full means "queue it".
+type slotLimiter struct {
+	mu    sync.Mutex
+	limit int
+	held  int
+}
+
+func newSlotLimiter(limit int) *slotLimiter { return &slotLimiter{limit: clampParallel(limit)} }
+
+func (l *slotLimiter) tryAcquire() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.held >= l.limit {
+		return false
+	}
+	l.held++
+	return true
+}
+
+func (l *slotLimiter) release() {
+	l.mu.Lock()
+	if l.held > 0 {
+		l.held--
+	}
+	l.mu.Unlock()
+}
+
+func (l *slotLimiter) setLimit(limit int) {
+	l.mu.Lock()
+	l.limit = clampParallel(limit)
+	l.mu.Unlock()
+}
+
+func (l *slotLimiter) getLimit() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.limit
+}
+
+func NewDownloadManager(repo database.DownloadsRepository, baseDir string, maxParallel int) *DownloadManager {
 	return &DownloadManager{
 		repo:    repo,
 		live:    make(map[string]*liveDownload),
 		baseDir: baseDir,
-		slots:   make(chan struct{}, maxParallelDownloads),
+		slots:   newSlotLimiter(maxParallel),
 	}
+}
+
+// MaxParallel reports how many files may transfer at once.
+func (dm *DownloadManager) MaxParallel() int { return dm.slots.getLimit() }
+
+// SetMaxParallel changes the transfer cap; callers should follow with pump()
+// so queued downloads can claim any newly available slots.
+func (dm *DownloadManager) SetMaxParallel(n int) {
+	dm.slots.setLimit(n)
 }
 
 func (dm *DownloadManager) path(filename string) string {
@@ -131,12 +180,7 @@ func (dm *DownloadManager) Start(ctx context.Context, api *tg.Client, doc *tg.Do
 	// A slot decides whether the row is born downloading or queued; both
 	// states are persisted up front so restarts keep the picture accurate.
 	dm.mu.Lock()
-	queued := false
-	select {
-	case dm.slots <- struct{}{}:
-	default:
-		queued = true
-	}
+	queued := !dm.slots.tryAcquire()
 	state := db.StateDownloading
 	if queued {
 		state = db.StateQueued
@@ -248,7 +292,7 @@ func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *
 
 // releaseSlot frees one transfer slot. Callers should follow with pump().
 func (dm *DownloadManager) releaseSlot() {
-	<-dm.slots
+	dm.slots.release()
 }
 
 // pump promotes queued downloads into free slots, FIFO. Resolution runs in a
@@ -260,9 +304,7 @@ func (dm *DownloadManager) pump() {
 			dm.mu.Unlock()
 			return
 		}
-		select {
-		case dm.slots <- struct{}{}:
-		default:
+		if !dm.slots.tryAcquire() {
 			dm.mu.Unlock()
 			return
 		}

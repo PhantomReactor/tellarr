@@ -26,19 +26,22 @@ import (
 // chunks are the maximum size Telegram accepts, and enough workers run to
 // keep every connection busy.
 //
-// Tunables (read once from the environment at startup):
+// Tunables:
 //   - MAX_PARALLEL_DOWNLOADS: how many files transfer at once; extra
-//     requests wait in the queue (default 3)
+//     requests wait in the queue (default 3). The value stored in the
+//     settings table (Settings page) overrides it and can be changed at
+//     runtime; the env var is only the initial fallback.
 //   - DOWNLOAD_THREADS: parallel chunk workers per file, 1..16 (default 16)
 const (
 	downloadPoolSize = 8           // parallel connections per DC
 	downloadPartSize = 1024 * 1024 // 1 MiB, maximum chunk per upload.getFile
+
+	// SettingMaxParallelDownloads is the settings-table key holding how many
+	// files may transfer at once.
+	SettingMaxParallelDownloads = "max_parallel_downloads"
 )
 
-var (
-	maxParallelDownloads = envCount("MAX_PARALLEL_DOWNLOADS", 3)
-	maxDownloadThreads   = envCount("DOWNLOAD_THREADS", 16)
-)
+var maxDownloadThreads = envCount("DOWNLOAD_THREADS", 16)
 
 func envCount(name string, def int) int {
 	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
@@ -48,6 +51,26 @@ func envCount(name string, def int) int {
 		slog.Warn("invalid value for tuning env, using default", "env", name, "value", v, "default", def)
 	}
 	return def
+}
+
+func defaultMaxParallelDownloads() int {
+	return envCount("MAX_PARALLEL_DOWNLOADS", 3)
+}
+
+// clampParallel keeps the transfer limit within what the connection pool
+// (downloadPoolSize per DC) can sensibly serve.
+func clampParallel(n int) int {
+	return min(max(n, 1), 16)
+}
+
+// parseParallelSetting converts a stored settings value into a clamped
+// limit; ok reports whether the value was usable.
+func parseParallelSetting(v string) (n int, ok bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return clampParallel(n), true
 }
 
 // bestThreads scales worker count by file size so small files don't hammer

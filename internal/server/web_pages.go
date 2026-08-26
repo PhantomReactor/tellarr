@@ -632,7 +632,28 @@ func (s *Server) webSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	msg, errMsg := r.URL.Query().Get("msg"), r.URL.Query().Get("err")
 	testResult := r.URL.Query().Get("qbtest")
-	_ = views.SettingsPage(tokenVMs, feeds, s.baseURL(), realURL, testResult, msg, errMsg).Render(r.Context(), w)
+	_ = views.SettingsPage(tokenVMs, feeds, s.baseURL(), realURL, testResult, s.dm.MaxParallel(), msg, errMsg).Render(r.Context(), w)
+}
+
+// webSettingsDownloads saves the max-parallel-downloads tuning from the
+// Settings page. It persists to the settings table (survives restarts) and
+// applies immediately; queued downloads are promoted into any new slots.
+func (s *Server) webSettingsDownloads(w http.ResponseWriter, r *http.Request) {
+	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("max_parallel")))
+	if err != nil || n < 1 {
+		redirectFlash(w, r, "/ui/settings", "", "parallel downloads must be a number of 1 or more")
+		return
+	}
+	n = clampParallel(n)
+	if err := s.settingsRepo.Set(SettingMaxParallelDownloads, strconv.Itoa(n)); err != nil {
+		slog.Error("failed to save max parallel downloads", "err", err)
+		redirectFlash(w, r, "/ui/settings", "", "could not save setting")
+		return
+	}
+	s.dm.SetMaxParallel(n)
+	s.dm.pump()
+	slog.Info("max parallel downloads updated", "value", n)
+	redirectFlash(w, r, "/ui/settings", fmt.Sprintf("max parallel downloads set to %d", n), "")
 }
 
 func (s *Server) webTokenCreate(w http.ResponseWriter, r *http.Request) {
