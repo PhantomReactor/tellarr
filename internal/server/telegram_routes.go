@@ -318,7 +318,7 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		filename := documentFilename(doc, "")
-		isMedia, isTorrent := isIndexableMedia(doc, filename)
+		isMedia, _, _, isTorrent := isIndexableMedia(doc, filename)
 		if isMedia || isTorrent {
 			results = append(results, models.MediaInfo{
 				Name:      filename,

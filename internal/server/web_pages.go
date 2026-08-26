@@ -247,7 +247,8 @@ func (s *Server) webIndexerProwlarr(w http.ResponseWriter, r *http.Request) {
 	prowlarr := NewProwlarrClientFromEnv()
 	switch {
 	case prowlarr.Configured():
-		if err := prowlarr.AddTorznabIndexer(r.Context(), indexerName, feedURL); err != nil {
+		categories := s.inferProwlarrCategories(dialog)
+		if err := prowlarr.AddTorznabIndexer(r.Context(), indexerName, feedURL, categories); err != nil {
 			slog.Error("prowlarr add failed", "channel", channel, "err", err)
 			redirectFlash(w, r, "/ui/indexers", "", "Prowlarr: "+err.Error())
 			return
@@ -269,6 +270,35 @@ func (s *Server) webIndexerProwlarr(w http.ResponseWriter, r *http.Request) {
 	default:
 		redirectFlash(w, r, "/ui/indexers", "", "configure PROWLARR_URL + PROWLARR_API_KEY, or set PROWLARR_DEFINITIONS_DIR to write a custom definition")
 	}
+}
+
+// inferProwlarrCategories samples recent search results for a channel to
+// guess whether it's predominantly audio or video content, so the Prowlarr
+// indexer is registered under a category *Arr apps will actually query
+// against instead of always defaulting to Movies/TV. Falls back to the
+// Movies/TV default when the channel is empty or the sample can't be
+// classified — there's no indexer-add UI to prompt through, so an
+// unreliable guess isn't worth blocking on.
+func (s *Server) inferProwlarrCategories(dialog *models.Dialog) []map[string]any {
+	results, err := s.searchChannelDialog(dialog, "", 25)
+	if err != nil || len(results) == 0 {
+		return ProwlarrMovieTVCategories
+	}
+	audio, other := 0, 0
+	for _, res := range results {
+		if res.IsTorrent {
+			continue // ambiguous — a .torrent could wrap either
+		}
+		if res.IsAudio {
+			audio++
+		} else {
+			other++
+		}
+	}
+	if audio > 0 && audio >= other {
+		return ProwlarrAudioCategories
+	}
+	return ProwlarrMovieTVCategories
 }
 
 // webIndexerProwlarrYML serves the Cardigann definition for manual copying.

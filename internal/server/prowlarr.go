@@ -32,6 +32,15 @@ func NewProwlarrClientFromEnv() *ProwlarrClient {
 
 func (p *ProwlarrClient) Configured() bool { return p.baseURL != "" && p.apiKey != "" }
 
+// Torznab category id sets, matching the <categories> block advertised in
+// writeCaps. Callers pick between these (see inferProwlarrCategories) so a
+// channel gets registered under a category Sonarr/Radarr/Lidarr will
+// actually query against, instead of always defaulting to Movies/TV.
+var (
+	ProwlarrMovieTVCategories = []map[string]any{{"id": 2000}, {"id": 2030}, {"id": 2040}, {"id": 5000}, {"id": 5030}, {"id": 5040}}
+	ProwlarrAudioCategories   = []map[string]any{{"id": 3000}, {"id": 3010}, {"id": 3040}}
+)
+
 type prowField struct {
 	Name  string `json:"name"`
 	Value any    `json:"value,omitempty"`
@@ -98,8 +107,10 @@ func (p *ProwlarrClient) firstAppProfileID(ctx context.Context) int {
 
 // AddTorznabIndexer creates (or updates) a Generic Torznab indexer in
 // Prowlarr pointing at one of our feeds. Feed URL must look like
-// {base}/torznab/{channel}/api?apikey={key}.
-func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL string) error {
+// {base}/torznab/{channel}/api?apikey={key}. categories is the set of
+// Torznab category ids Prowlarr should list (and default-query) for this
+// indexer — see inferProwlarrCategories for how callers pick it.
+func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL string, categories []map[string]any) error {
 	fu, err := url.Parse(feedURL)
 	if err != nil {
 		return fmt.Errorf("bad feed url: %w", err)
@@ -134,7 +145,9 @@ func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL st
 		return fmt.Errorf("Generic Torznab indexer not found in Prowlarr schema")
 	}
 
-	categories := []map[string]any{{"id": 2000}, {"id": 2030}, {"id": 2040}, {"id": 5000}, {"id": 5030}, {"id": 5040}}
+	if len(categories) == 0 {
+		categories = ProwlarrMovieTVCategories
+	}
 	fields := append([]prowField{}, tpl.Fields...)
 	fields = setProwlarrField(fields, "baseUrl", fu.Scheme+"://"+fu.Host)
 	fields = setProwlarrField(fields, "apiPath", fu.EscapedPath())

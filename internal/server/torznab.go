@@ -318,7 +318,7 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 			continue
 		}
 		filename := documentFilename(doc, "")
-		isMedia, isTorrent := isIndexableMedia(doc, filename)
+		isMedia, _, isAudio, isTorrent := isIndexableMedia(doc, filename)
 		if !isMedia && !isTorrent {
 			continue
 		}
@@ -330,6 +330,7 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 			Size:      doc.Size,
 			MessageId: int64(msg.ID),
 			IsTorrent: isTorrent,
+			IsAudio:   isAudio,
 		})
 	}
 	return out, nil
@@ -341,13 +342,15 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 // extension is checked as a fallback alongside MIME/attribute detection.
 var audioExtensions = []string{".flac", ".wav", ".ape", ".wv", ".alac", ".dsf", ".mp3", ".m4a", ".aac", ".ogg", ".opus"}
 
-// isIndexableMedia reports whether doc is content Tellarr can surface as a
-// search/browse result: video, audio, or a raw .torrent file.
-func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isTorrent bool) {
+// isIndexableMedia classifies doc as video, audio, and/or a raw .torrent
+// file — the set of content Tellarr can surface as a search/browse result.
+// isMedia is isVideo || isAudio, kept as a convenience for callers that only
+// care whether the item passes the filter at all.
+func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isVideo, isAudio, isTorrent bool) {
 	isTorrent = strings.EqualFold(doc.MimeType, "application/x-bittorrent") ||
 		strings.HasSuffix(strings.ToLower(filename), ".torrent")
-	isVideo := strings.HasPrefix(doc.MimeType, "video/")
-	isAudio := strings.HasPrefix(doc.MimeType, "audio/")
+	isVideo = strings.HasPrefix(doc.MimeType, "video/")
+	isAudio = strings.HasPrefix(doc.MimeType, "audio/")
 	for _, attr := range doc.Attributes {
 		switch attr.(type) {
 		case *tg.DocumentAttributeVideo:
@@ -365,7 +368,7 @@ func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isTorrent boo
 			}
 		}
 	}
-	return isVideo || isAudio, isTorrent
+	return isVideo || isAudio, isVideo, isAudio, isTorrent
 }
 
 // MediaInfoResult is the internal enriched search result.
@@ -374,6 +377,10 @@ type MediaInfoResult struct {
 	Size      int64
 	MessageId int64
 	IsTorrent bool
+	// IsAudio flags a non-torrent result classified as audio (vs. video),
+	// used to infer a Torznab category set when registering the channel as
+	// a Prowlarr indexer.
+	IsAudio bool
 	// URL is the exact aggregator link for link-post results ("" for media).
 	URL string
 }
