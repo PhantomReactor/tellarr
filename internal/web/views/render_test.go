@@ -44,6 +44,53 @@ func TestIndexersPageRenders(t *testing.T) {
 	}
 }
 
+func TestLoginPageRegisterLink(t *testing.T) {
+	var open, closed strings.Builder
+	if err := LoginPage("", true).Render(t.Context(), &open); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoginPage("boom", false).Render(t.Context(), &closed); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(open.String(), `href="/ui/register"`) {
+		t.Error("register link should render when registration is open")
+	}
+	if strings.Contains(closed.String(), `href="/ui/register"`) {
+		t.Error("register link should be hidden when a user already exists")
+	}
+}
+
+func TestRegisterPageClosed(t *testing.T) {
+	var sb strings.Builder
+	if err := RegisterPage("", false).Render(t.Context(), &sb); err != nil {
+		t.Fatal(err)
+	}
+	out := sb.String()
+	if strings.Contains(out, `action="/ui/register"`) {
+		t.Error("register form should not render when registration is closed")
+	}
+	if !strings.Contains(out, "Registration is closed") {
+		t.Error("closed registration notice missing")
+	}
+}
+
+func TestAccountPageRenders(t *testing.T) {
+	var sb strings.Builder
+	if err := AccountPage("admin", "password updated", "").Render(t.Context(), &sb); err != nil {
+		t.Fatal(err)
+	}
+	out := sb.String()
+	for _, want := range []string{
+		`action="/ui/account/password"`, `name="current_password"`,
+		`name="new_password"`, `minlength="6"`, `<strong>admin</strong>`,
+		`flash auto-dismiss ok-msg`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in account page", want)
+		}
+	}
+}
+
 func TestEmptyStatesRender(t *testing.T) {
 	var sb strings.Builder
 	if err := DownloadsPage(nil, "", "").Render(t.Context(), &sb); err != nil {

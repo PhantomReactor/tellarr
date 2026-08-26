@@ -34,6 +34,7 @@ templ Layout(title string, active string) {
 						<li><a href="/ui/indexers" class={ "nav-link", templ.KV("active", active == "indexers") }>Indexers</a></li>
 						<li><a href="/ui/downloads" class={ "nav-link", templ.KV("active", active == "downloads") }>Downloads</a></li>
 						<li><a href="/ui/settings" class={ "nav-link", templ.KV("active", active == "settings") }>Settings</a></li>
+						<li><a href="/ui/account" class={ "nav-link", templ.KV("active", active == "account") }>Account</a></li>
 						<li>
 							<form method="post" action="/ui/logout" class="inline-form">
 								<button type="submit" class="icon-btn" title="Logout" aria-label="Logout">@iconLogout()</button>

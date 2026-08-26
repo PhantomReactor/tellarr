@@ -1,0 +1,27 @@
+package views
+
+templ AccountPage(username string, msg string, errMsg string) {
+	@Layout("Tellarr — Account", "account") {
+		@Flash(errMsg, "error-msg")
+		@Flash(msg, "ok-msg")
+
+		<article>
+			<h2>Account</h2>
+			<p>Signed in as <strong>{ username }</strong>.</p>
+
+			<h3>Change password</h3>
+			<form method="post" action="/ui/account/password" class="inline-form">
+				<div>
+					<label for="current_password">Current password</label>
+					<input type="password" id="current_password" name="current_password" autocomplete="current-password" required/>
+				</div>
+				<div>
+					<label for="new_password">New password</label>
+					<input type="password" id="new_password" name="new_password" minlength="6" autocomplete="new-password" required/>
+				</div>
+				<button type="submit">Update password</button>
+			</form>
+			<p><em>Minimum 6 characters. Changing your password also invalidates existing API refresh tokens.</em></p>
+		</article>
+	}
+}

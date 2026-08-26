@@ -6,7 +6,7 @@ templ authBrand() {
 	</div>
 }
 
-templ LoginPage(errMsg string) {
+templ LoginPage(errMsg string, canRegister bool) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
 		<head>
@@ -30,14 +30,16 @@ templ LoginPage(errMsg string) {
 						<input type="password" name="password" placeholder="Password" autocomplete="current-password" required/>
 						<button type="submit">Login</button>
 					</form>
-					<p class="muted auth-alt">No account? <a href="/ui/register">Register</a></p>
+					if canRegister {
+						<p class="muted auth-alt">No account? <a href="/ui/register">Register</a></p>
+					}
 				</article>
 			</main>
 		</body>
 	</html>
 }
 
-templ RegisterPage(errMsg string) {
+templ RegisterPage(errMsg string, canRegister bool) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
 		<head>
@@ -56,11 +58,15 @@ templ RegisterPage(errMsg string) {
 					<h2>Create account</h2>
 					<p class="muted">Pick a username and password to get started.</p>
 					@Flash(errMsg, "error-msg")
-					<form method="post" action="/ui/register">
-						<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
-						<input type="password" name="password" placeholder="Password" autocomplete="new-password" required/>
-						<button type="submit">Register</button>
-					</form>
+					if canRegister {
+						<form method="post" action="/ui/register">
+							<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
+							<input type="password" name="password" placeholder="Password" autocomplete="new-password" required/>
+							<button type="submit">Register</button>
+						</form>
+					} else {
+						<p><mark>Registration is closed</mark> — an account already exists. Tellarr is single-user.</p>
+					}
 					<p class="muted auth-alt">Have an account? <a href="/ui/login">Login</a></p>
 				</article>
 			</main>

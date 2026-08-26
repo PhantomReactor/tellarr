@@ -175,6 +175,11 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandlRegister(w http.ResponseWriter, r *http.Request) {
+	if !s.canRegister() {
+		slog.Error("registration attempted after first user exists")
+		models.NewResponse(w, models.Response{Message: "registration is closed"}, http.StatusForbidden)
+		return
+	}
 	var req models.UserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		slog.Error("unable to decode request", "error", err)
