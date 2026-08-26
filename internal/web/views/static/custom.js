@@ -1,22 +1,35 @@
-// Copy-to-clipboard helper for YAML viewers and read-only fields.
-// Falls back to select+execCommand on non-HTTPS origins.
+// Copy-to-clipboard helper. Source is either data-copy-text on the button
+// itself or a textarea referenced via data-yml-id. Falls back to
+// select+execCommand on non-HTTPS origins.
 function tellarrCopy(btn) {
-  var ta = document.getElementById(btn.getAttribute("data-yml-id"));
-  if (!ta) return;
+  var text = btn.getAttribute("data-copy-text");
+  var ta = null;
+  if (text === null) {
+    ta = document.getElementById(btn.getAttribute("data-yml-id"));
+    if (!ta) return;
+    text = ta.value;
+  }
   var prev = btn.innerHTML;
   var done = function () {
-    btn.innerHTML = "Copied!";
-    setTimeout(function () {
-      btn.innerHTML = prev;
-    }, 1500);
+    if (btn.classList.contains("icon-btn")) {
+      btn.classList.add("copy-ok");
+      setTimeout(function () {
+        btn.classList.remove("copy-ok");
+      }, 1500);
+    } else {
+      btn.innerHTML = "Copied!";
+      setTimeout(function () {
+        btn.innerHTML = prev;
+      }, 1500);
+    }
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(ta.value).then(done, function () {
-      fallbackCopy(ta);
+    navigator.clipboard.writeText(text).then(done, function () {
+      if (ta) fallbackCopy(ta);
       done();
     });
   } else {
-    fallbackCopy(ta);
+    if (ta) fallbackCopy(ta);
     done();
   }
 }

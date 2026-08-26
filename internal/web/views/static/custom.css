@@ -466,6 +466,13 @@ summary:focus-visible,
 .compact-btn svg { flex-shrink: 0; }
 .compact-btn.outline svg { color: var(--tl-accent); }
 
+/* Pico stretches button[type=submit] to 100% width — compact buttons stay auto */
+button.compact-btn,
+a.compact-btn,
+input[type="submit"].compact-btn {
+  width: auto;
+}
+
 /* Anchor styled as a button (used next to real buttons) */
 a.compact-btn {
   border: 1px solid var(--tl-border-strong);
@@ -536,6 +543,12 @@ summary.icon-btn:hover {
 .icon-btn-danger:hover {
   color: var(--tl-danger);
   background: color-mix(in srgb, var(--tl-danger) 12%, transparent);
+}
+/* Transient "copied" state on icon buttons */
+.icon-btn.copy-ok,
+.icon-btn.copy-ok:hover {
+  color: var(--tl-success) !important;
+  background: color-mix(in srgb, var(--tl-success) 12%, transparent);
 }
 
 /* --- Forms ------------------------------------------------------------------- */
@@ -653,6 +666,52 @@ table th {
 }
 table td { border-bottom: 1px solid var(--tl-border) !important; }
 tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
+
+/* Stacked URL fields (settings: base url + per-channel feeds) */
+.url-fields { margin-top: 0.9rem; }
+.url-field { margin-bottom: 0.95rem; }
+.url-field:last-child { margin-bottom: 0; }
+.url-field-label {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--tl-muted);
+  margin-bottom: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+/* API key list */
+.key-list { margin-top: 0.75rem; }
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--tl-border);
+  border-radius: 3px;
+  background: var(--tl-input-bg);
+}
+.key-row:last-child { margin-bottom: 0; }
+.key-row code {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--tl-text);
+}
+.key-date { font-size: 0.78rem; white-space: nowrap; }
+.form-center {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.1rem;
+}
+.form-center form { margin: 0; }
 
 .num {
   font-variant-numeric: tabular-nums;
