@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -190,6 +191,7 @@ func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL st
 		"tags":           []any{},
 		"fields":         fields,
 	}
+	slog.Info("payload", slog.Any("payload map", payload))
 	data, status, err := p.do(ctx, http.MethodPost, "indexer", payload)
 	if err != nil {
 		return fmt.Errorf("adding indexer: %w", err)
