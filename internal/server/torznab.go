@@ -149,11 +149,11 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 			PubDate: pubDate,
 			Size:    res.Size,
 		}
-		// Emit parent + common subcategories for BOTH movies and TV so
+		// Emit parent + common subcategories for movies, TV, AND audio so
 		// results survive category intersection filtering in
-		// Sonarr/Radarr/Prowlarr regardless of query type or which
+		// Sonarr/Radarr/Lidarr/Prowlarr regardless of query type or which
 		// categories were picked in their indexer settings.
-		categories := []string{"2000", "2030", "2040", "5000", "5030", "5040"}
+		categories := []string{"2000", "2030", "2040", "5000", "5030", "5040", "3000", "3010", "3040"}
 		attrs := make([]torznabAttr, 0, 2+len(categories))
 		for _, c := range categories {
 			attrs = append(attrs, torznabAttr{Name: "category", Value: c})
@@ -252,10 +252,12 @@ func (s *Server) writeCaps(w http.ResponseWriter) {
     <search available="yes"/>
     <tv-search available="yes" supportedParams="q,season,ep"/>
     <movie-search available="yes" supportedParams="q"/>
+    <music-search available="yes" supportedParams="q"/>
   </searching>
   <categories>
     <category id="5000" title="TV"><subcat id="5030" title="TV/HD"/><subcat id="5040" title="TV/SD"/></category>
     <category id="2000" title="Movies"><subcat id="2030" title="Movies/HD"/><subcat id="2040" title="Movies/SD"/></category>
+    <category id="3000" title="Audio"><subcat id="3010" title="Audio/MP3"/><subcat id="3040" title="Audio/Lossless"/></category>
   </categories>
 </caps>`
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -316,15 +318,8 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 			continue
 		}
 		filename := documentFilename(doc, "")
-		isTorrent := strings.EqualFold(doc.MimeType, "application/x-bittorrent") ||
-			strings.HasSuffix(strings.ToLower(filename), ".torrent")
-		isVideo := strings.HasPrefix(doc.MimeType, "video/")
-		for _, attr := range doc.Attributes {
-			if v, ok := attr.(*tg.DocumentAttributeVideo); ok && v != nil {
-				isVideo = true
-			}
-		}
-		if !isVideo && !isTorrent {
+		isMedia, isTorrent := isIndexableMedia(doc, filename)
+		if !isMedia && !isTorrent {
 			continue
 		}
 		if filename == "" {
@@ -338,6 +333,39 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 		})
 	}
 	return out, nil
+}
+
+// audioExtensions are common (often lossless) audio rip formats. Telegram
+// frequently uploads these under a generic MIME type (e.g.
+// application/octet-stream) with no DocumentAttributeAudio, so the filename
+// extension is checked as a fallback alongside MIME/attribute detection.
+var audioExtensions = []string{".flac", ".wav", ".ape", ".wv", ".alac", ".dsf", ".mp3", ".m4a", ".aac", ".ogg", ".opus"}
+
+// isIndexableMedia reports whether doc is content Tellarr can surface as a
+// search/browse result: video, audio, or a raw .torrent file.
+func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isTorrent bool) {
+	isTorrent = strings.EqualFold(doc.MimeType, "application/x-bittorrent") ||
+		strings.HasSuffix(strings.ToLower(filename), ".torrent")
+	isVideo := strings.HasPrefix(doc.MimeType, "video/")
+	isAudio := strings.HasPrefix(doc.MimeType, "audio/")
+	for _, attr := range doc.Attributes {
+		switch attr.(type) {
+		case *tg.DocumentAttributeVideo:
+			isVideo = true
+		case *tg.DocumentAttributeAudio:
+			isAudio = true
+		}
+	}
+	if !isAudio {
+		lower := strings.ToLower(filename)
+		for _, ext := range audioExtensions {
+			if strings.HasSuffix(lower, ext) {
+				isAudio = true
+				break
+			}
+		}
+	}
+	return isVideo || isAudio, isTorrent
 }
 
 // MediaInfoResult is the internal enriched search result.

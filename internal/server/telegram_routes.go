@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"tellarr/internal/database"
 	db "tellarr/internal/database/models"
 	"tellarr/internal/pkg/models"
@@ -318,24 +317,9 @@ func (s *Server) Search(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			continue
 		}
-		var isVideo bool
-		var filename string
-		isTorrent := strings.EqualFold(doc.MimeType, "application/x-bittorrent")
-		for _, attr := range doc.Attributes {
-			switch a := attr.(type) {
-			case *tg.DocumentAttributeVideo:
-				isVideo = true
-			case *tg.DocumentAttributeFilename:
-				filename = a.FileName
-				if strings.HasSuffix(strings.ToLower(filename), ".torrent") {
-					isTorrent = true
-				}
-			}
-			if !isVideo && strings.HasPrefix(doc.MimeType, "video/") {
-				isVideo = true
-			}
-		}
-		if isVideo || isTorrent {
+		filename := documentFilename(doc, "")
+		isMedia, isTorrent := isIndexableMedia(doc, filename)
+		if isMedia || isTorrent {
 			results = append(results, models.MediaInfo{
 				Name:      filename,
 				Link:      fmt.Sprintf("https://t.me/c/%d/%d", dialog.DialogId, messageId),
