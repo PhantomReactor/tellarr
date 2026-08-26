@@ -37,6 +37,8 @@ func (f *fakeProwlarr) handler(t *testing.T) http.HandlerFunc {
 					{"name":"categories","value":[{"id":9000}]}
 				]}
 			]`))
+		case strings.HasSuffix(r.URL.Path, "/appProfile") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode([]map[string]any{{"id": 3, "name": "Standard"}})
 		case r.URL.Path == "/api/v1/indexer" && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(f.indexers)
 		case r.URL.Path == "/api/v1/indexer" && r.Method == http.MethodPost:
@@ -76,6 +78,9 @@ func TestProwlarrAddTorznabCreatesThenUpdates(t *testing.T) {
 	}
 	if len(fake.bodies) != 1 || fake.bodies[0]["name"] != "Tellarr - My Channel" {
 		t.Fatalf("expected one create, got %+v", fake.bodies)
+	}
+	if id, _ := fake.bodies[0]["appProfileId"].(float64); id != 3 {
+		t.Errorf("appProfileId = %v, want 3", fake.bodies[0]["appProfileId"])
 	}
 	fields := fake.bodies[0]["fields"].([]any)
 	get := func(n string) any {

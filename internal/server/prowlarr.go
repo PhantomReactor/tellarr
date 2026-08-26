@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -71,6 +72,28 @@ func setProwlarrField(fields []prowField, name string, value any) []prowField {
 		}
 	}
 	return append(fields, prowField{Name: name, Value: value})
+}
+
+// firstAppProfileID returns the app profile to attach to new indexers.
+// Prowlarr rejects indexer resources whose appProfileId is 0, so a real one
+// must be resolved: PROWLARR_APP_PROFILE_ID if set, else the first profile
+// from /api/v1/appProfile, else 1 (Prowlarr's default "Standard" profile).
+func (p *ProwlarrClient) firstAppProfileID(ctx context.Context) int {
+	if v := strings.TrimSpace(os.Getenv("PROWLARR_APP_PROFILE_ID")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	data, _, err := p.do(ctx, http.MethodGet, "appProfile", nil)
+	if err == nil {
+		var profiles []struct {
+			ID int `json:"id"`
+		}
+		if json.Unmarshal(data, &profiles) == nil && len(profiles) > 0 && profiles[0].ID > 0 {
+			return profiles[0].ID
+		}
+	}
+	return 1
 }
 
 // AddTorznabIndexer creates (or updates) a Generic Torznab indexer in
@@ -142,6 +165,7 @@ func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL st
 		"enable":         true,
 		"implementation": tpl.Implementation,
 		"configContract": tpl.ConfigContract,
+		"appProfileId":   p.firstAppProfileID(ctx),
 		"priority":       25,
 		"tags":           []any{},
 		"fields":         fields,
