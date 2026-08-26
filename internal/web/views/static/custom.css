@@ -826,6 +826,11 @@ td, th { overflow-wrap: anywhere; }
   }
   nav ul:first-of-type { justify-content: center; }
   ul.nav-links {
+    /* Pico centers nav uls via align-self, which would let this row keep its
+       full content width and widen the page once items overflow. Stretch it
+       instead so overflow-x below scrolls the row, not the document. */
+    align-self: stretch;
+    max-width: 100%;
     flex-wrap: nowrap;
     justify-content: flex-start;
     overflow-x: auto;
