@@ -29,6 +29,31 @@ function fallbackCopy(ta) {
   } catch (e) {}
 }
 
+// --- Accent theme ----------------------------------------------------------------
+
+var ACCENTS = ["amber", "green", "gruvbox", "ice", "cyan", "rose", "ember", "nord", "mono"];
+
+function setAccent(v) {
+  if (ACCENTS.indexOf(v) === -1) v = "amber";
+  document.documentElement.setAttribute("data-accent", v);
+  try {
+    localStorage.setItem("tl-accent", v);
+  } catch (e) {}
+  var s = document.getElementById("accent-select");
+  if (s) s.value = v;
+}
+
+(function initAccent() {
+  var v = document.documentElement.getAttribute("data-accent");
+  if (!v) {
+    try {
+      v = localStorage.getItem("tl-accent");
+    } catch (e) {}
+    if (v) document.documentElement.setAttribute("data-accent", v);
+  }
+  setAccent(v || "amber");
+})();
+
 // --- Mobile nav ----------------------------------------------------------------
 
 function toggleNav(btn) {
@@ -42,7 +67,18 @@ function toggleNav(btn) {
 
 function openModal(id) {
   var d = document.getElementById(id);
-  if (d && typeof d.showModal === "function") d.showModal();
+  if (!d || typeof d.showModal !== "function") return;
+  d.showModal();
+  // Focus the first field instead of the close button (avoids a focus ring
+  // on the X right after opening).
+  var f = d.querySelector("input:not([type=hidden]), textarea, select");
+  if (f) {
+    f.focus();
+    return;
+  }
+  if (document.activeElement && d.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
 }
 
 function closeModal(id) {

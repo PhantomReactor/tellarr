@@ -15,12 +15,13 @@ templ Layout(title string, active string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title }</title>
-			<meta name="theme-color" content="#141619"/>
-			<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%235c9fd8'/%3E%3Cpath d='M6.5 8h11M12 8v9.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"/>
+			<meta name="theme-color" content="#121316"/>
+			<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%23e0a458'/%3E%3Cpath d='M6.5 8h11M12 8v9.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"/>
 			<link rel="stylesheet" href={ "/static/pico.css?v=" + AssetVersion }/>
 			<link rel="stylesheet" href={ "/static/custom.css?v=" + AssetVersion }/>
 			<script src={ "/static/htmx.min.js?v=" + AssetVersion } defer></script>
 			<script src={ "/static/custom.js?v=" + AssetVersion } defer></script>
+			<script>try{var a=localStorage.getItem("tl-accent");if(a)document.documentElement.setAttribute("data-accent",a);}catch(e){}</script>
 		</head>
 		<body>
 			<main class="container">
@@ -42,6 +43,19 @@ templ Layout(title string, active string) {
 						<li><a href="/ui/downloads" class={ "nav-link", templ.KV("active", active == "downloads") }>Downloads</a></li>
 						<li><a href="/ui/settings" class={ "nav-link", templ.KV("active", active == "settings") }>Settings</a></li>
 						<li><a href="/ui/account" class={ "nav-link", templ.KV("active", active == "account") }>Account</a></li>
+						<li>
+							<select id="accent-select" class="nav-accent" aria-label="Accent theme" onchange="setAccent(this.value)">
+								<option value="amber">amber</option>
+								<option value="green">green</option>
+								<option value="gruvbox">gruvbox</option>
+								<option value="ice">ice</option>
+								<option value="cyan">cyan</option>
+								<option value="rose">rose</option>
+								<option value="ember">ember</option>
+								<option value="nord">nord</option>
+								<option value="mono">mono</option>
+							</select>
+						</li>
 						<li>
 							<form method="post" action="/ui/logout" class="inline-form">
 								<button type="submit" class="icon-btn" title="Logout" aria-label="Logout">@iconLogout()</button>
