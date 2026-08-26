@@ -1,6 +1,12 @@
 package server
 
-import "testing"
+import (
+	"crypto/sha1"
+	"fmt"
+	"testing"
+
+	dbm "tellarr/internal/database/models"
+)
 
 func TestQBitUIState(t *testing.T) {
 	cases := map[string]string{
@@ -55,5 +61,34 @@ func TestRemoteTorrentVM(t *testing.T) {
 	rt.Eta = qBitEtaUnknown
 	if got := remoteTorrentVM(rt).ETA; got != -1 {
 		t.Errorf("unknown eta mapped to %d, want -1", got)
+	}
+}
+
+func TestTorrentInfoHash(t *testing.T) {
+	sample := []byte("d4:infod4:name5:hello6:lengthi5eed6:lengthi42e4:name3:tweee")
+	want := fmt.Sprintf("%x", sha1.Sum([]byte("d4:name5:hello6:lengthi5ee")))
+	if got := torrentInfoHash(sample); got != want {
+		t.Errorf("torrentInfoHash = %q, want %q", got, want)
+	}
+	for _, bad := range [][]byte{nil, []byte("garbage"), []byte("d4:name5:helloe"), []byte("d3:foo")} {
+		if got := torrentInfoHash(bad); got != "" {
+			t.Errorf("torrentInfoHash(%q) = %q, want empty", bad, got)
+		}
+	}
+}
+
+func TestFilterKnownRemotes(t *testing.T) {
+	local := []dbm.TorrentDownload{
+		{ID: "aaa", Origin: dbm.OriginExternalQb},
+		{ID: "bbb", Origin: dbm.OriginTelegram},
+		{ID: "ddd", Origin: dbm.OriginAria2},
+	}
+	remotes := []RemoteTorrent{{Hash: "aaa"}, {Hash: "ccc"}}
+	got := filterKnownRemotes(local, remotes)
+	if len(got) != 1 || got[0].Hash != "aaa" {
+		t.Fatalf("expected only aaa, got %+v", got)
+	}
+	if r := filterKnownRemotes(nil, remotes); len(r) != 0 {
+		t.Fatalf("no recorded rows must filter everything, got %+v", r)
 	}
 }

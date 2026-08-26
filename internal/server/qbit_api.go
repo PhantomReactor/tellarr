@@ -406,7 +406,7 @@ func (s *Server) qbAddTorrent(w http.ResponseWriter, r *http.Request) {
 					failed++
 					continue
 				}
-				if err := s.forwardTorrentBytes(data, category, savePath); err != nil {
+				if err := s.forwardUploadedTorrent(data, fh.Filename, category, savePath); err != nil {
 					slog.Error("uploaded torrent forward failed", "err", err)
 					failed++
 				}
@@ -433,6 +433,20 @@ func (s *Server) qbAddTorrent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("Ok."))
+}
+
+// forwardUploadedTorrent forwards a directly-uploaded .torrent (qBittorrent
+// WebUI style) and records it as tellarr-added so it shows up in the UI.
+func (s *Server) forwardUploadedTorrent(data []byte, filename, category, savePath string) error {
+	hash, err := s.forwardTorrentBytes(data, category, savePath)
+	if err != nil {
+		return err
+	}
+	if hash == "" {
+		slog.Warn("forwarded torrent without parsable info dict; not tracked", "file", filename)
+		return nil
+	}
+	return s.recordRemoteDownload(0, 0, filename, category, savePath, 0, hash)
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -497,10 +511,11 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 		if err != nil {
 			return fmt.Errorf("fetching torrent bytes failed: %w", err)
 		}
-		if err := s.forwardTorrentBytes(buf.Bytes(), category, savePath); err != nil {
+		hash, err := s.forwardTorrentBytes(buf.Bytes(), category, savePath)
+		if err != nil {
 			return err
 		}
-		return s.recordRemoteDownload(dialogId, messageId, filename+".torrent", category, savePath, dialog.SessionId)
+		return s.recordRemoteDownload(dialogId, messageId, filename+".torrent", category, savePath, dialog.SessionId, hash)
 
 	default:
 		// Direct media: start our own downloader under the fake hash.
@@ -625,16 +640,111 @@ func sanitizeExternalFilename(name string) string {
 	return name
 }
 
-func (s *Server) forwardTorrentBytes(data []byte, category, savePath string) error {
-	qb := NewQBitRealClientFromEnv()
-	if !qb.Configured() {
-		return fmt.Errorf("real qbittorrent not configured")
+// bencodeSpan returns the full raw encoding of the first bencoded value in
+// data. It validates structure only well enough to find value boundaries;
+// contents are never interpreted.
+func bencodeSpan(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("bencode: unexpected end of input")
 	}
-	return qb.AddTorrentBytes(data, category, savePath)
+	switch c := data[0]; {
+	case c >= '0' && c <= '9':
+		colon := bytes.IndexByte(data, ':')
+		if colon < 0 {
+			return nil, fmt.Errorf("bencode: malformed string")
+		}
+		n, err := strconv.Atoi(string(data[:colon]))
+		if err != nil || n < 0 || colon+1+n > len(data) {
+			return nil, fmt.Errorf("bencode: malformed string length")
+		}
+		return data[:colon+1+n], nil
+	case c == 'i':
+		end := bytes.IndexByte(data, 'e')
+		if end < 0 {
+			return nil, fmt.Errorf("bencode: unterminated integer")
+		}
+		return data[:end+1], nil
+	case c == 'l', c == 'd':
+		pos := 1
+		for {
+			if pos >= len(data) {
+				return nil, fmt.Errorf("bencode: unterminated container")
+			}
+			if data[pos] == 'e' {
+				return data[:pos+1], nil
+			}
+			item, err := bencodeSpan(data[pos:])
+			if err != nil {
+				return nil, err
+			}
+			pos += len(item)
+			if c == 'd' {
+				if pos >= len(data) || data[pos] == 'e' {
+					return nil, fmt.Errorf("bencode: dictionary entry missing value")
+				}
+				item, err = bencodeSpan(data[pos:])
+				if err != nil {
+					return nil, err
+				}
+				pos += len(item)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("bencode: unexpected type %q", string(c))
+	}
 }
 
-func (s *Server) recordRemoteDownload(dialogId, messageId int64, filename, category, savePath string, sessionId int64) error {
-	id := SyntheticHash(dialogId, messageId, filename)
+// torrentInfoHash computes the v1 infohash (sha1 over the raw bencoded info
+// dictionary) of .torrent bytes; "" when the payload cannot be parsed.
+func torrentInfoHash(data []byte) string {
+	if len(data) == 0 || data[0] != 'd' {
+		return ""
+	}
+	pos := 1
+	for pos < len(data) {
+		if data[pos] == 'e' {
+			break
+		}
+		keyRaw, err := bencodeSpan(data[pos:])
+		if err != nil {
+			return ""
+		}
+		pos += len(keyRaw)
+		key := keyRaw[bytes.IndexByte(keyRaw, ':')+1:]
+
+		valRaw, err := bencodeSpan(data[pos:])
+		if err != nil {
+			return ""
+		}
+		pos += len(valRaw)
+		if string(key) == "info" {
+			sum := sha1.Sum(valRaw)
+			return hex.EncodeToString(sum[:])
+		}
+	}
+	return ""
+}
+
+// forwardTorrentBytes hands a real .torrent to the genuine client and returns
+// its v1 infohash so the transfer can later be recognized as tellarr-added.
+func (s *Server) forwardTorrentBytes(data []byte, category, savePath string) (string, error) {
+	hash := torrentInfoHash(data)
+	qb := NewQBitRealClientFromEnv()
+	if !qb.Configured() {
+		return hash, fmt.Errorf("real qbittorrent not configured")
+	}
+	return hash, qb.AddTorrentBytes(data, category, savePath)
+}
+
+// recordRemoteDownload persists a marker for a torrent handed off to the real
+// qBittorrent instance. The row is keyed by the torrent's real infohash so
+// live status from the remote client can be matched back to tellarr-added
+// transfers.
+func (s *Server) recordRemoteDownload(dialogId, messageId int64, filename, category, savePath string, sessionId int64, hash string) error {
+	id := hash
+	if id == "" {
+		id = SyntheticHash(dialogId, messageId, filename)
+	}
 	existing, err := s.downloadRepo.Get(id)
 	if err == nil && existing != nil {
 		return nil
@@ -656,14 +766,42 @@ func (s *Server) recordRemoteDownload(dialogId, messageId int64, filename, categ
 	return s.downloadRepo.Create(row)
 }
 
+// knownRemoteHashes collects the real-qBittorrent infohashes tellarr has
+// recorded for torrents it forwarded (uploaded or grabbed via /d/ links).
+func knownRemoteHashes(rows []dbm.TorrentDownload) map[string]bool {
+	out := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if row.Origin == dbm.OriginExternalQb {
+			out[row.ID] = true
+		}
+	}
+	return out
+}
+
+// filterKnownRemotes keeps only torrents present on the real client that were
+// added through tellarr; everything else in qBittorrent stays invisible here.
+func filterKnownRemotes(local []dbm.TorrentDownload, remotes []RemoteTorrent) []RemoteTorrent {
+	known := knownRemoteHashes(local)
+	if len(known) == 0 {
+		return nil
+	}
+	out := make([]RemoteTorrent, 0, len(remotes))
+	for _, rt := range remotes {
+		if known[rt.Hash] {
+			out = append(out, rt)
+		}
+	}
+	return out
+}
+
 func (s *Server) qbTorrentRows() ([]dbm.TorrentDownload, []RemoteTorrent, error) {
 	local, err := s.dm.List()
 	var remote []RemoteTorrent
 	if qb := NewQBitRealClientFromEnv(); qb.Configured() {
-		if remotes, err := qb.TorrentsInfo(); err == nil {
-			remote = remotes
+		if remotes, rerr := qb.TorrentsInfo(); rerr == nil {
+			remote = filterKnownRemotes(local, remotes)
 		} else {
-			slog.Error("real qbit info failed", "err", err)
+			slog.Error("real qbit info failed", "err", rerr)
 		}
 	}
 	s.refreshAriaRows(local)

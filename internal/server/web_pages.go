@@ -352,19 +352,20 @@ func remoteTorrentVM(rt RemoteTorrent) views.DownloadRowVM {
 }
 
 // downloadsPageVMs assembles the rows shown on the Downloads page: local
-// (telegram/aria2) rows plus live torrents from the real qBittorrent. When the
-// real client answers, its torrents supersede the persisted external_qbit
-// placeholder rows so a forwarded .torrent is never listed twice.
+// (telegram/aria2) rows plus live status for torrents tellarr itself forwarded
+// to the real qBittorrent. Torrents added to that client by any other means
+// are never listed. When the real client answers, its live data supersedes
+// the persisted external_qbit placeholder rows so a forwarded .torrent is
+// never listed twice.
 func (s *Server) downloadsPageVMs(rows []models.TorrentDownload) []views.DownloadRowVM {
 	qb := NewQBitRealClientFromEnv()
 	var remotes []RemoteTorrent
 	liveRemotes := false
 	if qb.Configured() {
-		var err error
-		remotes, err = qb.TorrentsInfo()
-		if err != nil {
+		if r, err := qb.TorrentsInfo(); err != nil {
 			slog.Error("real qbit info failed", "err", err)
 		} else {
+			remotes = filterKnownRemotes(rows, r)
 			liveRemotes = true
 		}
 	}
