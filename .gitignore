@@ -34,3 +34,7 @@ main
 .DS_Store
 
 session.json
+
+# Local database & downloads
+data/tellarr.db
+data/*

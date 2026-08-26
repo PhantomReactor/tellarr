@@ -406,7 +406,7 @@ func (s *Server) qbAddTorrent(w http.ResponseWriter, r *http.Request) {
 					failed++
 					continue
 				}
-				if err := s.forwardTorrentBytes(data, category, savePath); err != nil {
+				if err := s.forwardUploadedTorrent(data, fh.Filename, category, savePath); err != nil {
 					slog.Error("uploaded torrent forward failed", "err", err)
 					failed++
 				}
@@ -435,6 +435,20 @@ func (s *Server) qbAddTorrent(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Ok."))
 }
 
+// forwardUploadedTorrent forwards a directly-uploaded .torrent (qBittorrent
+// WebUI style) and records it as tellarr-added so it shows up in the UI.
+func (s *Server) forwardUploadedTorrent(data []byte, filename, category, savePath string) error {
+	hash, err := s.forwardTorrentBytes(data, category, savePath)
+	if err != nil {
+		return err
+	}
+	if hash == "" {
+		slog.Warn("forwarded torrent without parsable info dict; not tracked", "file", filename)
+		return nil
+	}
+	return s.recordRemoteDownload(0, 0, filename, category, savePath, 0, hash)
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {
@@ -447,19 +461,29 @@ func firstNonEmpty(vals ...string) string {
 func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath string) error {
 	dialogId, messageId, isTorrent, ok := s.isOwnRef(raw)
 	if !ok {
-		// A raw provider link pasted directly into the qBittorrent UI.
-		if linkresolver.Name(raw) != "" {
-			return s.startExternalDownload(ctx, 0, 0, 0, nil, raw, category, savePath)
-		}
-		return fmt.Errorf("unsupported url")
+		// Anything else a client pastes (provider pages, magnets, .torrent
+		// URLs, telegra.ph posts, direct files) goes through the universal
+		// dispatcher.
+		_, _, err := s.addAnyLink(ctx, raw, "", category, savePath)
+		return err
 	}
+	_, _, err := s.addTellarrRef(ctx, raw, dialogId, messageId, isTorrent, category, savePath)
+	return err
+}
+
+// addTellarrRef starts the download backing one of tellarr's own synthetic
+// refs ({BASE}/d/{dialog}/{message}[.torrent] or an x.tellarr magnet).
+// Message media streams via our Telegram downloader; link-only posts resolve
+// their aggregator URL through aria2; genuine .torrent documents are handed
+// to the real qBittorrent.
+func (s *Server) addTellarrRef(ctx context.Context, raw string, dialogId, messageId int64, isTorrent bool, category, savePath string) (string, string, error) {
 	dialog, err := s.dialogRepo.GetDialogsByDialogId(dialogId)
 	if err != nil || dialog == nil {
-		return fmt.Errorf("dialog %d not found", dialogId)
+		return "", "", fmt.Errorf("dialog %d not found", dialogId)
 	}
 	t, msg, err := s.resolveMessage(ctx, dialogId, messageId)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
 	doc := documentOfMessage(msg)
@@ -475,33 +499,48 @@ func (s *Server) addTorrentFromURL(ctx context.Context, raw, category, savePath 
 			// No pinned link (legacy magnet): fall back to the first link.
 			urls := providerURLsInMessage(msg)
 			if len(urls) == 0 {
-				return fmt.Errorf("message %d/%d has no downloadable content", dialogId, messageId)
+				return "", "", fmt.Errorf("message %d/%d has no downloadable content", dialogId, messageId)
 			}
 			told = urls[0]
 		}
-		return s.startExternalDownload(ctx, dialog.SessionId, dialogId, messageId, msg, told, category, savePath)
+		return s.startExternalDownload(ctx, dialog.SessionId, dialogId, messageId, msg, told, category, savePath, "")
 
 	case isTorrent:
 		// Real torrent file: pull bytes and hand off to the genuine client.
 		buf := new(bytes.Buffer)
 		dl := newDownloader()
-		_, err = dl.Download(t.client.API(), &tg.InputDocumentFileLocation{
+		api, err := t.downloadAPI(t.context, doc.DCID)
+		if err != nil {
+			return "", "", fmt.Errorf("download pool unavailable: %w", err)
+		}
+		_, err = dl.Download(api, &tg.InputDocumentFileLocation{
 			ID:            doc.ID,
 			AccessHash:    doc.AccessHash,
 			FileReference: doc.FileReference,
 		}).Stream(t.context, buf)
 		if err != nil {
-			return fmt.Errorf("fetching torrent bytes failed: %w", err)
+			return "", "", fmt.Errorf("fetching torrent bytes failed: %w", err)
 		}
-		if err := s.forwardTorrentBytes(buf.Bytes(), category, savePath); err != nil {
-			return err
+		hash, err := s.forwardTorrentBytes(buf.Bytes(), category, savePath)
+		if err != nil {
+			return "", "", err
 		}
-		return s.recordRemoteDownload(dialogId, messageId, filename+".torrent", category, savePath, dialog.SessionId)
+		if err := s.recordRemoteDownload(dialogId, messageId, filename+".torrent", category, savePath, dialog.SessionId, hash); err != nil {
+			return "", "", err
+		}
+		return remoteRowID(hash, dialogId, messageId, filename+".torrent"), filename + ".torrent", nil
 
 	default:
 		// Direct media: start our own downloader under the fake hash.
-		_, err = s.dm.Start(t.context, t.client.API(), doc, dialog.SessionId, dialogId, messageId, filename, category, savePath)
-		return err
+		api, err := t.downloadAPI(t.context, doc.DCID)
+		if err != nil {
+			return "", "", fmt.Errorf("download pool unavailable: %w", err)
+		}
+		row, err := s.dm.Start(t.context, api, doc, dialog.SessionId, dialogId, messageId, filename, category, savePath)
+		if err != nil {
+			return "", "", err
+		}
+		return row.ID, row.Filename, nil
 	}
 }
 
@@ -527,9 +566,9 @@ func externalHash(rawURL string) string {
 
 // startExternalDownload records an aria2-backed download row immediately and
 // resolves + hands off the link in the background so qBittorrent gets a fast
-// "Ok." response.
-func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId, messageId int64, msg *tg.Message, providerURL, category, savePath string) error {
-	title := titleForLink(msg, providerURL)
+// "Ok." response. nameOverride (optional) pins the saved filename.
+func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId, messageId int64, msg *tg.Message, providerURL, category, savePath, nameOverride string) (string, string, error) {
+	title := firstNonEmpty(strings.TrimSpace(nameOverride), titleForLink(msg, providerURL))
 	var id string
 	if dialogId != 0 || messageId != 0 {
 		id = SyntheticHash(dialogId, messageId, title)
@@ -537,7 +576,7 @@ func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId,
 		id = externalHash(providerURL)
 	}
 	if existing, err := s.downloadRepo.Get(id); err == nil && existing != nil && existing.State == dbm.StateDownloading {
-		return nil
+		return id, existing.Filename, nil
 	}
 	if strings.TrimSpace(savePath) == "" {
 		savePath = s.dm.baseDir
@@ -558,23 +597,40 @@ func (s *Server) startExternalDownload(ctx context.Context, sessionId, dialogId,
 		UpdatedAt: now,
 	}
 	if err := s.downloadRepo.Create(row); err != nil {
-		return err
+		return "", "", err
 	}
-	go s.runExternalDownload(context.Background(), id, providerURL, savePath)
-	return nil
+	go s.runExternalDownload(context.Background(), id, providerURL, savePath, strings.TrimSpace(nameOverride))
+	return id, title, nil
 }
 
-// runExternalDownload resolves the aggregator page and submits the direct
-// link to aria2c. Runs on its own goroutine; results land in DOWNLOADS.
-func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir string) {
-	res, err := linkresolver.Resolve(ctx, providerURL)
-	if err != nil {
-		slog.Error("external link resolve failed", "url", providerURL, "err", err)
-		_ = s.downloadRepo.UpdateProgress(id, 0, dbm.StateError, err.Error())
-		return
+// runExternalDownload turns the stored link into an aria2 job. Known
+// aggregator pages are resolved into direct URLs first; everything else
+// goes to aria2 as-is (direct files and magnets are native addUri inputs).
+func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir, nameOverride string) {
+	var (
+		finalURL string
+		headers  map[string]string
+		size     int64
+		name     string
+	)
+	if linkresolver.Name(providerURL) != "" {
+		res, err := linkresolver.Resolve(ctx, providerURL)
+		if err != nil {
+			slog.Error("external link resolve failed", "url", providerURL, "err", err)
+			_ = s.downloadRepo.UpdateProgress(id, 0, dbm.StateError, err.Error())
+			return
+		}
+		finalURL, headers, size = res.URL, res.Headers, res.Size
+		name = res.Filename
+	} else {
+		finalURL = providerURL
+		name = linkresolver.FileNameFromURL(providerURL)
 	}
+	if override := sanitizeExternalFilename(nameOverride); override != "" && override != "download.bin" {
+		name = override
+	}
+	name = sanitizeExternalFilename(name)
 
-	name := sanitizeExternalFilename(res.Filename)
 	// aria2c resolves relative dirs against its own working directory, and
 	// rows persisted by older builds may carry relative or cwd-joined
 	// garbage (e.g. /data/tellarr/data/downloads/...). Anything outside the
@@ -587,19 +643,19 @@ func (s *Server) runExternalDownload(ctx context.Context, id, providerURL, dir s
 		dir = s.dm.baseDir
 	}
 	opts := Aria2Options{Dir: dir, Out: name}
-	for k, v := range res.Headers {
+	for k, v := range headers {
 		opts.Headers = append(opts.Headers, k+": "+v)
 	}
 
 	aria := NewAria2ClientFromEnv()
-	gid, err := aria.AddURI(ctx, res.URL, opts)
+	gid, err := aria.AddURI(ctx, finalURL, opts)
 	if err != nil {
-		slog.Error("aria2 addUri failed", "url", res.URL, "err", err)
+		slog.Error("aria2 addUri failed", "url", finalURL, "err", err)
 		_ = s.downloadRepo.UpdateProgress(id, 0, dbm.StateError, err.Error())
 		return
 	}
 	contentPath := filepath.Join(dir, name)
-	if err := s.downloadRepo.UpdateAriaProgress(id, 0, res.Size, dbm.StateDownloading, contentPath, name, ""); err != nil {
+	if err := s.downloadRepo.UpdateAriaProgress(id, 0, size, dbm.StateDownloading, contentPath, name, ""); err != nil {
 		slog.Error("failed to persist aria2 download", "id", id, "err", err)
 	}
 	if err := s.downloadRepo.SetRemoteGid(id, gid); err != nil {
@@ -617,16 +673,111 @@ func sanitizeExternalFilename(name string) string {
 	return name
 }
 
-func (s *Server) forwardTorrentBytes(data []byte, category, savePath string) error {
-	qb := NewQBitRealClientFromEnv()
-	if !qb.Configured() {
-		return fmt.Errorf("real qbittorrent not configured")
+// bencodeSpan returns the full raw encoding of the first bencoded value in
+// data. It validates structure only well enough to find value boundaries;
+// contents are never interpreted.
+func bencodeSpan(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("bencode: unexpected end of input")
 	}
-	return qb.AddTorrentBytes(data, category, savePath)
+	switch c := data[0]; {
+	case c >= '0' && c <= '9':
+		colon := bytes.IndexByte(data, ':')
+		if colon < 0 {
+			return nil, fmt.Errorf("bencode: malformed string")
+		}
+		n, err := strconv.Atoi(string(data[:colon]))
+		if err != nil || n < 0 || colon+1+n > len(data) {
+			return nil, fmt.Errorf("bencode: malformed string length")
+		}
+		return data[:colon+1+n], nil
+	case c == 'i':
+		end := bytes.IndexByte(data, 'e')
+		if end < 0 {
+			return nil, fmt.Errorf("bencode: unterminated integer")
+		}
+		return data[:end+1], nil
+	case c == 'l', c == 'd':
+		pos := 1
+		for {
+			if pos >= len(data) {
+				return nil, fmt.Errorf("bencode: unterminated container")
+			}
+			if data[pos] == 'e' {
+				return data[:pos+1], nil
+			}
+			item, err := bencodeSpan(data[pos:])
+			if err != nil {
+				return nil, err
+			}
+			pos += len(item)
+			if c == 'd' {
+				if pos >= len(data) || data[pos] == 'e' {
+					return nil, fmt.Errorf("bencode: dictionary entry missing value")
+				}
+				item, err = bencodeSpan(data[pos:])
+				if err != nil {
+					return nil, err
+				}
+				pos += len(item)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("bencode: unexpected type %q", string(c))
+	}
 }
 
-func (s *Server) recordRemoteDownload(dialogId, messageId int64, filename, category, savePath string, sessionId int64) error {
-	id := SyntheticHash(dialogId, messageId, filename)
+// torrentInfoHash computes the v1 infohash (sha1 over the raw bencoded info
+// dictionary) of .torrent bytes; "" when the payload cannot be parsed.
+func torrentInfoHash(data []byte) string {
+	if len(data) == 0 || data[0] != 'd' {
+		return ""
+	}
+	pos := 1
+	for pos < len(data) {
+		if data[pos] == 'e' {
+			break
+		}
+		keyRaw, err := bencodeSpan(data[pos:])
+		if err != nil {
+			return ""
+		}
+		pos += len(keyRaw)
+		key := keyRaw[bytes.IndexByte(keyRaw, ':')+1:]
+
+		valRaw, err := bencodeSpan(data[pos:])
+		if err != nil {
+			return ""
+		}
+		pos += len(valRaw)
+		if string(key) == "info" {
+			sum := sha1.Sum(valRaw)
+			return hex.EncodeToString(sum[:])
+		}
+	}
+	return ""
+}
+
+// forwardTorrentBytes hands a real .torrent to the genuine client and returns
+// its v1 infohash so the transfer can later be recognized as tellarr-added.
+func (s *Server) forwardTorrentBytes(data []byte, category, savePath string) (string, error) {
+	hash := torrentInfoHash(data)
+	qb := NewQBitRealClientFromEnv()
+	if !qb.Configured() {
+		return hash, fmt.Errorf("real qbittorrent not configured")
+	}
+	return hash, qb.AddTorrentBytes(data, category, savePath)
+}
+
+// recordRemoteDownload persists a marker for a torrent handed off to the real
+// qBittorrent instance. The row is keyed by the torrent's real infohash so
+// live status from the remote client can be matched back to tellarr-added
+// transfers.
+func (s *Server) recordRemoteDownload(dialogId, messageId int64, filename, category, savePath string, sessionId int64, hash string) error {
+	id := hash
+	if id == "" {
+		id = SyntheticHash(dialogId, messageId, filename)
+	}
 	existing, err := s.downloadRepo.Get(id)
 	if err == nil && existing != nil {
 		return nil
@@ -648,14 +799,42 @@ func (s *Server) recordRemoteDownload(dialogId, messageId int64, filename, categ
 	return s.downloadRepo.Create(row)
 }
 
+// knownRemoteHashes collects the real-qBittorrent infohashes tellarr has
+// recorded for torrents it forwarded (uploaded or grabbed via /d/ links).
+func knownRemoteHashes(rows []dbm.TorrentDownload) map[string]bool {
+	out := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if row.Origin == dbm.OriginExternalQb {
+			out[row.ID] = true
+		}
+	}
+	return out
+}
+
+// filterKnownRemotes keeps only torrents present on the real client that were
+// added through tellarr; everything else in qBittorrent stays invisible here.
+func filterKnownRemotes(local []dbm.TorrentDownload, remotes []RemoteTorrent) []RemoteTorrent {
+	known := knownRemoteHashes(local)
+	if len(known) == 0 {
+		return nil
+	}
+	out := make([]RemoteTorrent, 0, len(remotes))
+	for _, rt := range remotes {
+		if known[rt.Hash] {
+			out = append(out, rt)
+		}
+	}
+	return out
+}
+
 func (s *Server) qbTorrentRows() ([]dbm.TorrentDownload, []RemoteTorrent, error) {
 	local, err := s.dm.List()
 	var remote []RemoteTorrent
 	if qb := NewQBitRealClientFromEnv(); qb.Configured() {
-		if remotes, err := qb.TorrentsInfo(); err == nil {
-			remote = remotes
+		if remotes, rerr := qb.TorrentsInfo(); rerr == nil {
+			remote = filterKnownRemotes(local, remotes)
 		} else {
-			slog.Error("real qbit info failed", "err", err)
+			slog.Error("real qbit info failed", "err", rerr)
 		}
 	}
 	s.refreshAriaRows(local)
@@ -683,12 +862,31 @@ func (s *Server) refreshAriaRows(rows []dbm.TorrentDownload) {
 		st, err := aria.TellStatus(ctx, row.RemoteGid)
 		cancel()
 		if err != nil {
-			slog.Error("aria2 status failed", "gid", row.RemoteGid, "err", err)
+			if !IsGidNotFound(err) {
+				slog.Error("aria2 status failed", "gid", row.RemoteGid, "err", err)
+				continue
+			}
+			// The daemon no longer knows this gid (restart or pruned
+			// result). If the file landed on disk the download finished;
+			// otherwise fail the row so it stops being polled.
+			state := dbm.StateError
+			errMsg := "aria2 job lost: gid no longer known to the daemon"
+			if row.ContentPath != "" {
+				if _, statErr := os.Stat(row.ContentPath); statErr == nil {
+					state = dbm.StateDone
+					errMsg = ""
+				}
+			}
+			if updErr := s.downloadRepo.UpdateAriaProgress(row.ID, row.Written, row.Total, state, row.ContentPath, row.Filename, errMsg); updErr != nil {
+				slog.Error("failed to persist aria2 progress", "id", row.ID, "err", updErr)
+			}
+			row.State = state
 			continue
 		}
 		newState, _ := MapAriaStatus(st.Status)
 		written := st.Int64(st.CompletedLength)
 		total := st.Int64(st.TotalLength)
+		row.Speed = st.Int64(st.DownloadSpeed)
 		contentPath := row.ContentPath
 		filename := row.Filename
 		if len(st.Files) > 0 && st.Files[0].Path != "" {
@@ -722,6 +920,8 @@ func localToQbInfo(row dbm.TorrentDownload) qbTorrentInfo {
 	}
 	state := "downloading"
 	switch row.State {
+	case dbm.StateQueued:
+		state = "queuedDL"
 	case dbm.StateDone:
 		state = "pausedUP"
 	case dbm.StatePaused:
@@ -733,11 +933,15 @@ func localToQbInfo(row dbm.TorrentDownload) qbTorrentInfo {
 	}
 	eta := int64(8640000)
 	if progress > 0 && progress < 1 {
-		elapsed := time.Since(row.CreatedAt).Seconds()
-		if elapsed > 1 {
-			rate := float64(row.Written) / elapsed
-			if rate > 1 {
-				eta = int64(float64(row.Total-row.Written) / rate)
+		if row.Speed > 0 {
+			eta = int64(float64(row.Total-row.Written) / float64(row.Speed))
+		} else {
+			elapsed := time.Since(row.CreatedAt).Seconds()
+			if elapsed > 1 {
+				rate := float64(row.Written) / elapsed
+				if rate > 1 {
+					eta = int64(float64(row.Total-row.Written) / rate)
+				}
 			}
 		}
 	} else if progress >= 1 {
@@ -748,6 +952,7 @@ func localToQbInfo(row dbm.TorrentDownload) qbTorrentInfo {
 		Category:    row.Category,
 		Completed:   row.Written,
 		ContentPath: row.ContentPath,
+		DlSpeed:     row.Speed,
 		Eta:         eta,
 		Hash:        row.ID,
 		Name:        row.Filename,
@@ -870,7 +1075,13 @@ func qbResume(qb *QBitRealClient, hashes []string) error { return qb.Resume(hash
 func ariaEach(a *Aria2Client, hashes []string, fn func(*Aria2Client, string) error) error {
 	var firstErr error
 	for _, h := range hashes {
-		if err := fn(a, h); err != nil && firstErr == nil {
+		err := fn(a, h)
+		if err == nil || IsGidNotFound(err) {
+			// An unknown gid means the job is already gone from the
+			// daemon; nothing left to do for it.
+			continue
+		}
+		if firstErr == nil {
 			firstErr = err
 		}
 	}

@@ -250,3 +250,17 @@ func itoa(n int) string {
 	}
 	return string(digits)
 }
+
+// guessSize recovers an approximate download size for a link-only post:
+// release titles usually embed one ("Movie 2024 1080p 1.4GB"), so the link's
+// title (which includes its surrounding message line) is tried first, then
+// the whole message text as fallback. Returns 0 when nothing is found.
+func guessSize(msg *tg.Message, title string) int64 {
+	if n := linkresolver.ParseSize(title); n > 0 {
+		return n
+	}
+	if msg != nil {
+		return linkresolver.ParseSize(msg.Message)
+	}
+	return 0
+}

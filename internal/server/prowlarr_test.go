@@ -122,7 +122,7 @@ func TestTorznabCardigannYAMLContent(t *testing.T) {
 	for _, want := range []string{
 		"id: tellarr-mychannel",
 		"type: torznab",
-		"name: Tellarr - MyChannel",
+		`name: "Tellarr - MyChannel"`,
 		"- name: apikey",
 		"default: \"k1\"",
 		"/torznab/MyChannel/api?apikey={{ .Config.apikey }}&t={{ .Query.Type }}&q={{ .Query.Q }}",

@@ -13,3 +13,7 @@ func StaticFS() fs.FS {
 	}
 	return sub
 }
+
+// AssetVersion is appended to static asset URLs as ?v=... to bust browser
+// caches after an update. Bump it whenever css/js content changes.
+const AssetVersion = "3"

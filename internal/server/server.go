@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/tg"
 	_ "github.com/joho/godotenv/autoload"
 )
 
@@ -24,12 +25,13 @@ type Server struct {
 	sessionRepo      database.SessionRepository
 	dialogRepo       database.DialogsRepository
 	userRepo         database.UserRepository
-	tokenRepo      database.TokenRepository
-	downloadRepo   database.DownloadsRepository
-	dm             *DownloadManager
-	appId          int
-	appHash        string
-	mu             sync.RWMutex
+	tokenRepo        database.TokenRepository
+	downloadRepo     database.DownloadsRepository
+	settingsRepo     database.SettingsRepository
+	dm               *DownloadManager
+	appId            int
+	appHash          string
+	mu               sync.RWMutex
 }
 
 type TelegramSession struct {
@@ -38,6 +40,9 @@ type TelegramSession struct {
 	client  *telegram.Client
 	ready   chan struct{}
 	err     error
+
+	poolMu  sync.Mutex
+	dlPools map[int]tg.Invoker
 }
 
 func NewServer() *http.Server {
@@ -52,6 +57,7 @@ func NewServer() *http.Server {
 	userRepo := database.NewUserRespository(db.DB)
 	tokenRepo := database.NewTokenRepository(db.DB)
 	downloadRepo := database.NewDownloadsRepository(db.DB)
+	settingsRepo := database.NewSettingsRepository(db.DB)
 
 	downloadDir := os.Getenv("DOWNLOAD_DIR")
 	if strings.TrimSpace(downloadDir) == "" {
@@ -86,19 +92,36 @@ func NewServer() *http.Server {
 		telegramSessions[sessionId] = &TelegramSession{client: telegramClient, context: nil}
 
 	}
-	NewServer := &Server{
-		port:           port,
-		telegramSessions: telegramSessions,
-		db:             db,
-		sessionRepo:    sessionRepo,
-		dialogRepo:     dialogRepo,
-		userRepo:       userRepo,
-		tokenRepo:      tokenRepo,
-		downloadRepo:   downloadRepo,
-		dm:             NewDownloadManager(downloadRepo, downloadDir),
-		appId:          appId,
-		appHash:        appHash,
+	// A value saved on the Settings page overrides the env default; it also
+	// applies live at runtime, so this is just the starting point.
+	maxParallel := defaultMaxParallelDownloads()
+	if v, err := settingsRepo.Get(SettingMaxParallelDownloads); err != nil {
+		slog.Error("failed to read download settings, using default", "err", err)
+	} else if v != nil {
+		if n, ok := parseParallelSetting(*v); ok {
+			maxParallel = n
+		} else {
+			slog.Warn("invalid stored max parallel downloads, using default", "value", *v)
+		}
 	}
+
+	NewServer := &Server{
+		port:             port,
+		telegramSessions: telegramSessions,
+		db:               db,
+		sessionRepo:      sessionRepo,
+		dialogRepo:       dialogRepo,
+		userRepo:         userRepo,
+		tokenRepo:        tokenRepo,
+		downloadRepo:     downloadRepo,
+		settingsRepo:     settingsRepo,
+		dm:               NewDownloadManager(downloadRepo, downloadDir, maxParallel),
+		appId:            appId,
+		appHash:          appHash,
+	}
+	// The download manager needs the server to re-resolve Telegram media
+	// when queued downloads are promoted to active transfers.
+	NewServer.dm.resolve = NewServer.resolveDownloadMedia
 
 	for _, sessionId := range sessionIds {
 		started := make(chan struct{})

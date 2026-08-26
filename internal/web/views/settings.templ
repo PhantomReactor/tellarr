@@ -13,16 +13,25 @@ type IndexerFeedVM struct {
 	FeedURL string
 }
 
-templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, realQbURL string, qbTestResult string, msg string, errMsg string) {
+templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, realQbURL string, qbTestResult string, maxParallel int, msg string, errMsg string) {
 	@Layout("Tellarr — Settings", "settings") {
 		@Flash(errMsg, "error-msg")
 		@Flash(msg, "ok-msg")
 
 		<article>
+			<h2>Downloads</h2>
+			<form method="post" action="/ui/settings/downloads" class="inline-form">
+				<label for="max_parallel">Max parallel downloads</label>
+				<input type="number" id="max_parallel" name="max_parallel" min="1" max="16" step="1" value={ strconv.Itoa(maxParallel) } style="max-width:6rem"/>
+				<button type="submit" class="compact-btn">Save</button>
+			</form>
+		</article>
+
+		<article>
 			<h2>API keys</h2>
-			<p>Use an API key as the Torznab <code>apikey</code> parameter.</p>
+			<p><small class="muted">Used as the Torznab <code>apikey</code> parameter.</small></p>
 			<form method="post" action="/ui/settings/tokens" class="inline-form">
-				<button type="submit">Generate new key</button>
+				<button type="submit" class="compact-btn">@iconPlus() Generate new key</button>
 			</form>
 		if len(tokens) > 0 {
 			<div class="table-wrap">
@@ -37,7 +46,7 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 								<td data-label="Created">{ t.CreatedAt }</td>
 								<td class="actions" data-label="Actions">
 									<form method="post" action={ templ.URL("/ui/settings/tokens/" + strconv.FormatInt(t.ID, 10) + "/delete") } class="inline-form">
-										<button type="submit" class="outline small-btn">Delete</button>
+										<button type="submit" class="icon-btn icon-btn-danger" title="Delete key" aria-label="Delete key">@iconTrash()</button>
 									</form>
 								</td>
 							</tr>
@@ -50,7 +59,7 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 
 		<article>
 			<h2>Sonarr / Radarr — Torznab indexer</h2>
-			<p>Add a "Custom Indexer" of type Torznab in Prowlarr/Sonarr/Radarr using these URLs:</p>
+			<p>Add these as Torznab indexers in Prowlarr/Sonarr/Radarr:</p>
 			if len(feeds) == 0 {
 				<p><em>No indexer-enabled channels. Enable some on the <a href="/ui/indexers">Indexers</a> page.</em></p>
 			} else {
@@ -75,18 +84,18 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 
 		<article>
 			<h2>Download clients</h2>
-			<p>Configure Sonarr/Radarr with a qBittorrent client pointing at this server:</p>
+			<p>Add Tellarr as a qBittorrent client in Sonarr/Radarr:</p>
 			<ul>
 				<li>Host: <code>{ baseURLHost(baseURL) }</code></li>
-				<li>Username / password: your <code>QBIT_USER</code>/<code>QBIT_PASS</code> values</li>
+				<li>Username / password: your <code>QBIT_USER</code>/<code>QBIT_PASS</code></li>
 			</ul>
 			<h3>Real qBittorrent passthrough</h3>
 			if realQbURL == "" {
-				<p><em>Not configured. Set <code>QBIT_REAL_URL</code>, <code>QBIT_REAL_USER</code>, <code>QBIT_REAL_PASS</code> to forward genuine .torrent files to a real qBittorrent instance.</em></p>
+				<p><em><small>Not configured — set <code>QBIT_REAL_URL</code>, <code>QBIT_REAL_USER</code>, <code>QBIT_REAL_PASS</code>.</small></em></p>
 			} else {
 				<p>Forwarding .torrent files to: <code>{ realQbURL }</code>
 					<form method="get" action="/ui/settings/qbit/test" hx-get="/ui/settings/qbit/test" hx-target="#qb-test" hx-swap="innerHTML" class="inline-form">
-						<button type="submit" class="outline small-btn">Test connection</button>
+						<button type="submit" class="outline compact-btn">Test connection</button>
 					</form>
 				</p>
 				<div id="qb-test">{ qbTestResult }</div>

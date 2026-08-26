@@ -51,7 +51,14 @@ func (q *QBitRealClient) login() error {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK || string(body) != "Ok." {
+	// qBittorrent < 5.2 answers 200 "Ok." on success and 200 "Fails."
+	// on bad credentials; 5.2+ answers 204 with an empty body on
+	// success and 401 on bad credentials. So: "Fails." always rejects,
+	// anything else in the 2xx range accepts.
+	if string(body) == "Fails." {
+		return fmt.Errorf("login rejected (%s): bad credentials? at %s", resp.Status, q.baseURL+"/api/v2/auth/login")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("login failed (%s): %q at %s", resp.Status, string(body), q.baseURL+"/api/v2/auth/login")
 	}
 	return nil
@@ -125,9 +132,37 @@ func (q *QBitRealClient) AddTorrentBytes(torrent []byte, category, savePath stri
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	// 5.2+ replies 204 to endpoints with empty bodies; accept any 2xx.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("remote add failed (%s): %s", resp.Status, string(b))
+	}
+	return nil
+}
+
+// AddMagnet forwards a magnet URI to the remote client.
+func (q *QBitRealClient) AddMagnet(magnet, category, savePath string) error {
+	if !q.Configured() {
+		return fmt.Errorf("real qbittorrent not configured")
+	}
+	if err := q.ensureLogin(); err != nil {
+		return err
+	}
+	form := url.Values{"urls": {magnet}}
+	if category != "" {
+		form.Set("category", category)
+	}
+	if savePath != "" {
+		form.Set("savepath", savePath)
+	}
+	resp, err := q.http.PostForm(q.baseURL+"/api/v2/torrents/add", form)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remote magnet add failed (%s): %s", resp.Status, string(b))
 	}
 	return nil
 }
@@ -143,6 +178,27 @@ type RemoteTorrent struct {
 	ContentPath string  `json:"content_path"`
 	DlSpeed     int64   `json:"dlspeed"`
 	Eta         int64   `json:"eta"`
+}
+
+// qBitEtaUnknown is qBittorrent's sentinel for "no estimate".
+const qBitEtaUnknown = 8640000
+
+// qbitUIState maps a real-qBittorrent state string (both 4.x "paused*" and
+// 5.x "stopped*" variants) onto the four states the web UI understands.
+func qbitUIState(state string) string {
+	switch state {
+	case "pausedDL", "stoppedDL":
+		return "paused"
+	case "error", "errored", "missingFiles":
+		return "error"
+	case "uploading", "stalledUP", "pausedUP", "stoppedUP", "forcedUP",
+		"queuedUP", "checkingUP", "allocating", "completed":
+		return "done"
+	default:
+		// downloading, stalledDL, forcedDL, metaDL, queuedDL,
+		// checkingDL, checkingResumeData, moving, unknown...
+		return "downloading"
+	}
 }
 
 func (q *QBitRealClient) TorrentsInfo() ([]RemoteTorrent, error) {
@@ -180,7 +236,8 @@ func (q *QBitRealClient) action(hash, endpoint string, extra url.Values) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	// 5.2+ replies 204 to endpoints with empty bodies; accept any 2xx.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("%s failed: %s", endpoint, resp.Status)
 	}
 	return nil

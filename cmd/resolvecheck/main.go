@@ -15,7 +15,9 @@ func main() {
 		url = os.Args[1]
 	}
 	fmt.Println("resolving:", url)
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// CAPTCHA solving (up to ~2 min) plus provider-side link generation can
+	// legitimately take a few minutes end to end.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	res, err := linkresolver.Resolve(ctx, url)
 	if err != nil {

@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -14,20 +16,27 @@ import (
 
 const sessionCookie = "tellarr_session"
 
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) RegisterWebRoutes(r chi.Router) {
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(views.StaticFS()))))
+	// Embedded assets have no modtime, so without explicit headers browsers
+	// may heuristically cache stale JS/CSS forever. Force revalidation.
+	r.Handle("/static/*", http.StripPrefix("/static/", noCache(http.FileServer(http.FS(views.StaticFS())))))
 
 	r.Get("/ui/login", func(w http.ResponseWriter, r *http.Request) {
 		if _, err := r.Cookie(sessionCookie); err == nil {
 			http.Redirect(w, r, "/ui/downloads", http.StatusSeeOther)
 			return
 		}
-		_ = views.LoginPage(r.URL.Query().Get("err")).Render(r.Context(), w)
+		_ = views.LoginPage(r.URL.Query().Get("err"), s.canRegister()).Render(r.Context(), w)
 	})
 	r.Post("/ui/login", s.webLogin)
-	r.Get("/ui/register", func(w http.ResponseWriter, r *http.Request) {
-		_ = views.RegisterPage(r.URL.Query().Get("err")).Render(r.Context(), w)
-	})
+	r.Get("/ui/register", s.webRegisterPage)
 	r.Post("/ui/register", s.webRegister)
 
 	r.Route("/ui", func(r chi.Router) {
@@ -44,14 +53,18 @@ func (s *Server) RegisterWebRoutes(r chi.Router) {
 		r.Post("/indexers/toggle", s.webIndexerToggle)
 		r.Post("/indexers/prowlarr", s.webIndexerProwlarr)
 		r.Get("/indexers/prowlarr/yml", s.webIndexerProwlarrYML)
+		r.Get("/indexers/prowlarr/yml/view", s.webIndexerProwlarrYMLView)
 		r.Get("/downloads", s.webDownloads)
 		r.Get("/downloads/table", s.webDownloadsTable)
 		r.Post("/downloads/add", s.webDownloadAdd)
 		r.Post("/downloads/{id}/{action}", s.webDownloadAction)
 		r.Get("/settings", s.webSettings)
+		r.Post("/settings/downloads", s.webSettingsDownloads)
 		r.Post("/settings/tokens", s.webTokenCreate)
 		r.Post("/settings/tokens/{id}/delete", s.webTokenDelete)
 		r.Get("/settings/qbit/test", s.webQBitTest)
+		r.Get("/account", s.webAccount)
+		r.Post("/account/password", s.webAccountPassword)
 	})
 }
 
@@ -90,39 +103,62 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, u *db.User) error {
 	return nil
 }
 
+// canRegister reports whether registration is open. Tellarr is single-user,
+// so it closes permanently once the first account exists.
+func (s *Server) canRegister() bool {
+	exists, err := s.userRepo.HasAnyUser()
+	if err != nil {
+		slog.Error("failed to check for existing users", "err", err)
+		return false
+	}
+	return !exists
+}
+
+func (s *Server) webRegisterPage(w http.ResponseWriter, r *http.Request) {
+	if _, err := r.Cookie(sessionCookie); err == nil {
+		http.Redirect(w, r, "/ui/downloads", http.StatusSeeOther)
+		return
+	}
+	_ = views.RegisterPage(r.URL.Query().Get("err"), s.canRegister()).Render(r.Context(), w)
+}
+
 func (s *Server) webLogin(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	u, err := s.findUser(username, 0)
 	if err != nil || u == nil {
-		_ = views.LoginPage("invalid credentials").Render(r.Context(), w)
+		_ = views.LoginPage("invalid credentials", s.canRegister()).Render(r.Context(), w)
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		_ = views.LoginPage("invalid credentials").Render(r.Context(), w)
+		_ = views.LoginPage("invalid credentials", s.canRegister()).Render(r.Context(), w)
 		return
 	}
 	if err := s.setSessionCookie(w, u); err != nil {
-		_ = views.LoginPage("could not create session").Render(r.Context(), w)
+		_ = views.LoginPage("could not create session", s.canRegister()).Render(r.Context(), w)
 		return
 	}
 	http.Redirect(w, r, "/ui/downloads", http.StatusSeeOther)
 }
 
 func (s *Server) webRegister(w http.ResponseWriter, r *http.Request) {
+	if !s.canRegister() {
+		http.Redirect(w, r, "/ui/login?err="+url.QueryEscape("registration is closed — an account already exists"), http.StatusSeeOther)
+		return
+	}
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	if len(password) < 6 {
-		_ = views.RegisterPage("password must be at least 6 characters").Render(r.Context(), w)
+		_ = views.RegisterPage("password must be at least 6 characters", true).Render(r.Context(), w)
 		return
 	}
 	u, err := s.createUser(username, password)
 	if err != nil {
-		_ = views.RegisterPage(err.Error()).Render(r.Context(), w)
+		_ = views.RegisterPage(err.Error(), true).Render(r.Context(), w)
 		return
 	}
 	if err := s.setSessionCookie(w, u); err != nil {
-		_ = views.RegisterPage("could not create session").Render(r.Context(), w)
+		_ = views.RegisterPage("could not create session", true).Render(r.Context(), w)
 		return
 	}
 	http.Redirect(w, r, "/ui/telegram", http.StatusSeeOther)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
@@ -38,7 +39,12 @@ func deadFileErr(p *page) error {
 }
 
 func newFetchClient() *http.Client {
-	return &http.Client{Timeout: 45 * time.Second}
+	// Some providers (TMBCloud) bind hand-off tokens to a session cookie
+	// (PHPSESSID) set on the initial page load and required on later XHR
+	// POSTs; without a jar those cookies never make it onto the follow-up
+	// requests and the server rejects them as invalid.
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{Timeout: 45 * time.Second, Jar: jar}
 }
 
 func fetchPage(ctx context.Context, client *http.Client, rawURL string) (*page, error) {

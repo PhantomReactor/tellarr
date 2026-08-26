@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -49,6 +50,25 @@ type ariaResponse struct {
 	Error  *ariaError      `json:"error"`
 }
 
+// RPCError is a structured error returned by the aria2 JSON-RPC endpoint.
+type RPCError struct {
+	Code    int
+	Message string
+}
+
+func (e *RPCError) Error() string { return fmt.Sprintf("aria2 rpc error %d: %s", e.Code, e.Message) }
+
+// IsGidNotFound reports whether err is aria2 rejecting a GID it no longer
+// knows about (daemon restarted, finished job pruned from its results, or
+// already removed).
+func IsGidNotFound(err error) bool {
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) {
+		return false
+	}
+	return rpcErr.Code == 1 && strings.Contains(rpcErr.Message, "is not found")
+}
+
 func (a *Aria2Client) call(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
 	if !a.Configured() {
 		return nil, fmt.Errorf("aria2 rpc not configured")
@@ -75,7 +95,7 @@ func (a *Aria2Client) call(ctx context.Context, method string, params ...any) (j
 		return nil, fmt.Errorf("aria2: bad rpc response: %w", err)
 	}
 	if out.Error != nil {
-		return nil, fmt.Errorf("aria2 rpc error %d: %s", out.Error.Code, out.Error.Message)
+		return nil, &RPCError{Code: out.Error.Code, Message: out.Error.Message}
 	}
 	return out.Result, nil
 }

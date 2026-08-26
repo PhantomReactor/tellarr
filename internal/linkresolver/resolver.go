@@ -65,6 +65,12 @@ var providers = []provider{
 		defaults: []string{"gdflix"},
 		resolve:  resolveGDFlix,
 	},
+	{
+		name:     "tmbcloud",
+		envKey:   "TMBCLOUD_HOSTS",
+		defaults: []string{"tmbcloud"},
+		resolve:  resolveTMBCloud,
+	},
 }
 
 func providerFor(rawURL string) *provider {
@@ -117,6 +123,9 @@ var (
 		regexp.MustCompile(`(?i)(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']`),
 		regexp.MustCompile(`(?i)window\.open\(\s*["']([^"']+)["']`),
 		regexp.MustCompile(`(?i)\burl\s*:\s*["'](https?://[^"']+)["']`),
+		// data-url attributes back "copy link" buttons on several hosts
+		// (e.g. TMBCloud's cloudfiles page) that never render an <a href>.
+		regexp.MustCompile(`(?i)data-url\s*=\s*["'](https?://[^"']+)["']`),
 	}
 	titleRe    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	tagRe      = regexp.MustCompile(`(?s)<[^>]*>`)
@@ -154,7 +163,9 @@ func absURL(base, ref string) string {
 	return b.ResolveReference(r).String()
 }
 
-func parseSize(label string) int64 {
+// ParseSize extracts a byte size embedded in arbitrary text such as
+// "1.4 GB", "700MB" or "2,5Gb"; returns 0 when no size is present.
+func ParseSize(label string) int64 {
 	m := sizeRe.FindStringSubmatch(label)
 	if m == nil {
 		return 0
@@ -274,7 +285,7 @@ func extractCandidates(baseURL, html string) []candidate {
 			return
 		}
 		seen[u] = true
-		size := parseSize(label)
+		size := ParseSize(label)
 		out = append(out, candidate{url: u, label: stripTags(label), size: size})
 	}
 	for _, m := range anchorRe.FindAllStringSubmatch(html, -1) {

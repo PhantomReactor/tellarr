@@ -34,6 +34,16 @@ func (u *UserRepository) UpdateUser(user models.User) error {
 	return nil
 }
 
+// HasAnyUser reports whether at least one account exists. Tellarr is
+// single-user: registration is only offered until the first account is made.
+func (u *UserRepository) HasAnyUser() (bool, error) {
+	var count int
+	if err := u.db.Get(&count, "select count(*) from users"); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (u *UserRepository) GetUser(username string, id int64) (*models.User, error) {
 	if id == 0 && username == "" {
 		return nil, fmt.Errorf("id or username is required")
