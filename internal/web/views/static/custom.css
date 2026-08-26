@@ -1059,6 +1059,12 @@ td, th { overflow-wrap: anywhere; }
 }
 
 @media (max-width: 720px) {
+  /* Shrink the whole UI on small screens (desktop keeps 15.5px) */
+  :root,
+  [data-theme="dark"] {
+    --pico-font-size: 86%;
+  }
+
   h2 { font-size: 1.1rem; }
   main.container { padding-inline: 0.9rem; }
   article { padding-top: 0.9rem; }
