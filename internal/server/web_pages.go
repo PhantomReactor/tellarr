@@ -178,7 +178,7 @@ func (s *Server) collectDialogs() ([]models.Dialog, error) {
 
 func (s *Server) webIndexers(w http.ResponseWriter, r *http.Request) {
 	dialogs, err := s.collectDialogs()
-	errMsg := ""
+	errMsg := popFlash(w, r, "err")
 	if err != nil {
 		slog.Error("collect dialogs failed", "err", err)
 		errMsg = "failed to load channels"
@@ -187,7 +187,7 @@ func (s *Server) webIndexers(w http.ResponseWriter, r *http.Request) {
 	for _, d := range dialogs {
 		vms = append(vms, views.ChannelVM{Name: d.Name, IsIndex: d.Indexer})
 	}
-	_ = views.IndexersPage(vms, r.URL.Query().Get("msg"), errMsg).Render(r.Context(), w)
+	_ = views.IndexersPage(vms, popFlash(w, r, "msg"), errMsg).Render(r.Context(), w)
 }
 
 func (s *Server) webIndexerToggle(w http.ResponseWriter, r *http.Request) {
@@ -402,7 +402,7 @@ func (s *Server) webDownloads(w http.ResponseWriter, r *http.Request) {
 		rows = nil
 	}
 	s.refreshAriaRows(rows)
-	msg, errMsg := r.URL.Query().Get("msg"), r.URL.Query().Get("err")
+	msg, errMsg := popFlash(w, r, "msg"), popFlash(w, r, "err")
 	_ = views.DownloadsPage(s.downloadsPageVMs(rows), msg, errMsg).Render(r.Context(), w)
 }
 
@@ -600,7 +600,7 @@ func (s *Server) webSettings(w http.ResponseWriter, r *http.Request) {
 	if qb.Configured() {
 		realURL = qb.baseURL
 	}
-	msg, errMsg := r.URL.Query().Get("msg"), r.URL.Query().Get("err")
+	msg, errMsg := popFlash(w, r, "msg"), popFlash(w, r, "err")
 	testResult := r.URL.Query().Get("qbtest")
 	_ = views.SettingsPage(tokenVMs, feeds, s.baseURL(), realURL, testResult, s.dm.MaxParallel(), msg, errMsg).Render(r.Context(), w)
 }

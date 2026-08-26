@@ -14,7 +14,7 @@ func (s *Server) webAccount(w http.ResponseWriter, r *http.Request) {
 	if claims != nil {
 		username = claims.UserName
 	}
-	msg, errMsg := r.URL.Query().Get("msg"), r.URL.Query().Get("err")
+	msg, errMsg := popFlash(w, r, "msg"), popFlash(w, r, "err")
 	_ = views.AccountPage(username, msg, errMsg).Render(r.Context(), w)
 }
 

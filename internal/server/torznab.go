@@ -111,7 +111,15 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channelName := chi.URLParam(r, "channel")
+	// chi matches this route on the raw (escaped) path because the segment
+	// may itself contain an escaped "/" (channel names can contain slashes),
+	// so chi.URLParam hands back the value still percent-encoded — decode it
+	// before using it as a lookup key.
+	channelName, err := url.PathUnescape(chi.URLParam(r, "channel"))
+	if err != nil {
+		writeTorznabError(w, 900, "Internal error")
+		return
+	}
 	dialog, err := s.dialogRepo.GetDialogByName(channelName)
 	if err != nil {
 		writeTorznabError(w, 900, "Internal error")

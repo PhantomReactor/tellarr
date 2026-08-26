@@ -173,17 +173,54 @@ func renderTelegram(w http.ResponseWriter, r *http.Request, step string, session
 	_ = views.TelegramPage(step, sessionId, msg, errMsg).Render(r.Context(), w)
 }
 
+const flashCookiePrefix = "tellarr_flash_"
+
+// setFlash stashes a one-time flash message in a short-lived cookie rather
+// than the redirect URL. Query-string flash messages end up in browser
+// history, get echoed back in Referer headers, and show up verbatim when a
+// request is copied (e.g. "copy as curl") — a cookie only round-trips to
+// this server and is cleared the moment it's read.
+func setFlash(w http.ResponseWriter, r *http.Request, name, value string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     flashCookiePrefix + name,
+		Value:    url.QueryEscape(value),
+		Path:     "/",
+		MaxAge:   10,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+}
+
+// popFlash reads a flash cookie set by setFlash and clears it, so it's only
+// ever shown once (on the page load right after the redirect).
+func popFlash(w http.ResponseWriter, r *http.Request, name string) string {
+	c, err := r.Cookie(flashCookiePrefix + name)
+	if err != nil || c.Value == "" {
+		return ""
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     flashCookiePrefix + name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+	v, err := url.QueryUnescape(c.Value)
+	if err != nil {
+		return ""
+	}
+	return v
+}
+
 func redirectFlash(w http.ResponseWriter, r *http.Request, path string, msg, errMsg string) {
-	q := r.URL.Query()
 	if msg != "" {
-		q.Set("msg", msg)
-	} else {
-		q.Del("msg")
+		setFlash(w, r, "msg", msg)
 	}
 	if errMsg != "" {
-		q.Set("err", errMsg)
-	} else {
-		q.Del("err")
+		setFlash(w, r, "err", errMsg)
 	}
-	http.Redirect(w, r, path+"?"+q.Encode(), http.StatusSeeOther)
+	http.Redirect(w, r, path, http.StatusSeeOther)
 }
