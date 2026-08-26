@@ -183,21 +183,21 @@ templ DownloadsTable(rows []DownloadRowVM) {
 									<span>{ humanBytes(row.Written) }</span>
 									<small class="muted">/ { humanBytes(row.Total) }</small>
 								</td>
-								<td data-label="Speed" class="num cell-stats">
+								<td data-label="Speed" class={ "num", "cell-stats", templ.KV("cell-empty", row.State != "downloading") }>
 									if row.State == "downloading" {
 										<span class="speed">{ humanSpeed(row.Speed) }</span>
 									} else {
 										<span class="muted">—</span>
 									}
 								</td>
-								<td data-label="ETA" class="num cell-stats">
+								<td data-label="ETA" class={ "num", "cell-stats", templ.KV("cell-empty", row.State != "downloading") }>
 									if row.State == "downloading" {
 										<span>{ humanETA(row.ETA) }</span>
 									} else {
 										<span class="muted">—</span>
 									}
 								</td>
-								<td data-label="State">@statePill(row.State)</td>
+								<td data-label="State" class="cell-state">@statePill(row.State)</td>
 								<td class="actions" data-label="">
 									if row.State == "downloading" || row.State == "queued" {
 										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/pause") } class="inline-form">

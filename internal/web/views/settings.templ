@@ -35,8 +35,8 @@ templ SettingsPage(tokens []TokenVM, feeds []IndexerFeedVM, baseURL string, real
 				for _, t := range tokens {
 					<div class="key-row">
 						<code>{ t.Token }</code>
-						<button type="button" class="icon-btn" title="Copy key" aria-label="Copy key" onclick="tellarrCopy(this)" data-copy-text={ t.Token }>@iconCopy()</button>
 						<span class="muted key-date">{ t.CreatedAt }</span>
+						<button type="button" class="icon-btn" title="Copy key" aria-label="Copy key" onclick="tellarrCopy(this)" data-copy-text={ t.Token }>@iconCopy()</button>
 						<form method="post" action={ templ.URL("/ui/settings/tokens/" + strconv.FormatInt(t.ID, 10) + "/delete") } class="inline-form">
 							<button type="submit" class="icon-btn icon-btn-danger" title="Delete key" aria-label="Delete key">@iconTrash()</button>
 						</form>
