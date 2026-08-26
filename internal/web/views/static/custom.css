@@ -503,16 +503,38 @@ button.outline:hover {
   color: var(--tl-text);
 }
 
-/* --- Category select (indexers page) ----------------------------------------- */
+/* --- Category picker (Add to Prowlarr modal, indexers page) ------------------- */
+/* Categories are picked in #modal-prowlarr-cat rather than an inline
+   per-row control: the row action stays a single plain .icon-btn (so it
+   lines up with the other action icons — a native <select multiple> or an
+   inline popover can't match their height / risk clipping inside the
+   scrollable table), and the modal lets each channel carry more than one
+   category — an indexer can legitimately belong to several. */
 
-select.cat-select {
+.cat-menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15rem 0.6rem;
+  margin: 0.9rem 0 1.1rem;
+}
+.cat-menu .cat-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--tl-text);
+  cursor: pointer;
+  margin: 0;
+}
+.cat-menu .cat-menu-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.cat-menu .cat-menu-item input[type="checkbox"] {
+  margin: 0;
   width: auto;
-  min-width: 6.5rem;
-  height: 2.15rem;
-  padding: 0.15rem 0.4rem;
-  font-size: 0.82rem;
-  vertical-align: middle;
-  margin-right: 0.15rem;
 }
 
 /* --- Icon buttons ----------------------------------------------------------- */

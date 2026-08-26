@@ -73,7 +73,7 @@ func TestProwlarrAddTorznabCreatesThenUpdates(t *testing.T) {
 	p.apiKey = "secret"
 
 	feed := "http://tellarr.local:8080/torznab/My%20Channel/api?apikey=tell123"
-	if err := p.AddTorznabIndexer(context.Background(), "Tellarr - My Channel", feed, ProwlarrCategoriesForKey("movies")); err != nil {
+	if err := p.AddTorznabIndexer(context.Background(), "Tellarr - My Channel", feed, ProwlarrCategoriesForKeys([]string{"movies"})); err != nil {
 		t.Fatalf("add failed: %v", err)
 	}
 	if len(fake.bodies) != 1 || fake.bodies[0]["name"] != "Tellarr - My Channel" {
@@ -103,7 +103,7 @@ func TestProwlarrAddTorznabCreatesThenUpdates(t *testing.T) {
 	}
 
 	// Second add must update the existing entry, not create a duplicate.
-	if err := p.AddTorznabIndexer(context.Background(), "Tellarr - My Channel", feed, ProwlarrCategoriesForKey("movies")); err != nil {
+	if err := p.AddTorznabIndexer(context.Background(), "Tellarr - My Channel", feed, ProwlarrCategoriesForKeys([]string{"movies"})); err != nil {
 		t.Fatalf("second add failed: %v", err)
 	}
 	puts := 0

@@ -105,6 +105,23 @@ document.addEventListener("click", function (e) {
   if (d && e.target === d) d.close();
 });
 
+// Add-to-Prowlarr category picker: "Add to Prowlarr" buttons carry
+// data-channel and rewire #modal-prowlarr-cat's hidden name field (and
+// reset the category checkboxes to the default) before showing it.
+function openProwlarrCategoryModal(btn, ev) {
+  var name = btn.getAttribute("data-channel");
+  if (!name) return;
+  var nameInput = document.getElementById("prowlarr-cat-name");
+  var title = document.getElementById("prowlarr-cat-title");
+  if (nameInput) nameInput.value = name;
+  if (title) title.textContent = 'Add "' + name + '" to Prowlarr';
+  var defaultCategory = btn.getAttribute("data-default-category");
+  document.querySelectorAll('#modal-prowlarr-cat input[name="category"]').forEach(function (cb) {
+    cb.checked = cb.value === defaultCategory;
+  });
+  openModal("modal-prowlarr-cat");
+}
+
 // Delete confirmation: trash buttons carry data-del-id and rewire the two
 // forms inside #modal-delete before showing it.
 function askDelete(btn, ev) {

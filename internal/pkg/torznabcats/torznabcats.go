@@ -47,3 +47,32 @@ func IDsFor(key string) []int {
 	}
 	return All[0].IDs
 }
+
+// IDsForKeys resolves multiple category keys — an indexer can legitimately
+// belong to more than one (e.g. a channel with both movies and TV) — to a
+// combined, deduplicated list of Torznab category ids, in All's order.
+// Unknown keys are ignored; if none of the keys resolve, falls back to
+// DefaultKey's ids so callers always get a non-empty result.
+func IDsForKeys(keys []string) []int {
+	want := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
+	var out []int
+	seen := make(map[int]bool)
+	for _, c := range All {
+		if !want[c.Key] {
+			continue
+		}
+		for _, id := range c.IDs {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return IDsFor(DefaultKey)
+	}
+	return out
+}

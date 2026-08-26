@@ -244,7 +244,7 @@ func (s *Server) webIndexerProwlarr(w http.ResponseWriter, r *http.Request) {
 	}
 	indexerName := "Tellarr - " + channel
 
-	categories := ProwlarrCategoriesForKey(strings.ToLower(strings.TrimSpace(r.FormValue("category"))))
+	categories := ProwlarrCategoriesForKeys(r.Form["category"])
 
 	prowlarr := NewProwlarrClientFromEnv()
 	switch {

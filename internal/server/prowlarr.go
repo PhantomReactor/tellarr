@@ -34,12 +34,13 @@ func NewProwlarrClientFromEnv() *ProwlarrClient {
 
 func (p *ProwlarrClient) Configured() bool { return p.baseURL != "" && p.apiKey != "" }
 
-// ProwlarrCategoriesForKey resolves a form-submitted torznabcats.Category
-// key (the Indexers page category picker) to the Prowlarr API's category
-// field shape, defaulting to torznabcats.DefaultKey for an empty/unknown
-// key.
-func ProwlarrCategoriesForKey(key string) []map[string]any {
-	ids := torznabcats.IDsFor(key)
+// ProwlarrCategoriesForKeys resolves the form-submitted torznabcats.Category
+// keys (the Indexers page category picker, which allows selecting more than
+// one — an indexer can legitimately span multiple categories) to the
+// Prowlarr API's category field shape, defaulting to torznabcats.DefaultKey
+// when none are given/recognized.
+func ProwlarrCategoriesForKeys(keys []string) []map[string]any {
+	ids := torznabcats.IDsForKeys(keys)
 	out := make([]map[string]any, len(ids))
 	for i, id := range ids {
 		out[i] = map[string]any{"id": id}
@@ -152,7 +153,7 @@ func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL st
 	}
 
 	if len(categories) == 0 {
-		categories = ProwlarrCategoriesForKey(torznabcats.DefaultKey)
+		categories = ProwlarrCategoriesForKeys([]string{torznabcats.DefaultKey})
 	}
 	fields := append([]prowField{}, tpl.Fields...)
 	fields = setProwlarrField(fields, "baseUrl", fu.Scheme+"://"+fu.Host)
