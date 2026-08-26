@@ -147,7 +147,7 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 						<p class="muted modal-hint">Choose the categories this channel should be registered under — an indexer can carry more than one.</p>
 						<form method="post" action="/ui/indexers/prowlarr" id="prowlarr-cat-form">
 							<input type="hidden" name="name" id="prowlarr-cat-name" value=""/>
-							<div class="cat-menu cat-menu-modal">
+							<div class="cat-menu">
 								for _, cat := range torznabcats.All {
 									<label class="cat-menu-item">
 										if cat.Key == torznabcats.DefaultKey {

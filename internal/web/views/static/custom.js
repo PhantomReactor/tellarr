@@ -83,8 +83,11 @@ function openModal(id) {
   if (!d || typeof d.showModal !== "function") return;
   d.showModal();
   // Focus the first field instead of the close button (avoids a focus ring
-  // on the X right after opening).
-  var f = d.querySelector("input:not([type=hidden]), textarea, select");
+  // on the X right after opening). Checkboxes/radios are skipped — they're
+  // part of a group, not a single field to land focus on.
+  var f = d.querySelector(
+    "input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea, select"
+  );
   if (f) {
     f.focus();
     return;

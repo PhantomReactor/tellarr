@@ -512,18 +512,24 @@ button.outline:hover {
    category — an indexer can legitimately belong to several. */
 
 .cat-menu {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.15rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
   margin: 0.9rem 0 1.1rem;
 }
+/* Each row is a full-width flex item (default align-items: stretch on a
+   column flex container) so the whole row is clickable, not just the tiny
+   checkbox glyph or the text — a small/ambiguous hit target is the usual
+   cause of clicks that "sometimes" don't seem to register. */
 .cat-menu .cat-menu-item {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.25rem 0.35rem;
-  border-radius: 3px;
-  font-size: 0.9rem;
+  gap: 0.55rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.92rem;
   font-weight: 400;
   color: var(--tl-text);
   cursor: pointer;
@@ -534,7 +540,11 @@ button.outline:hover {
 }
 .cat-menu .cat-menu-item input[type="checkbox"] {
   margin: 0;
-  width: auto;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--tl-accent);
+  cursor: pointer;
 }
 
 /* --- Icon buttons ----------------------------------------------------------- */
