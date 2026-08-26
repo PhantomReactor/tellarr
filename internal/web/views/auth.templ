@@ -23,7 +23,6 @@ templ LoginPage(errMsg string, canRegister bool) {
 				<article class="auth-card">
 					@authBrand()
 					<h2>Sign in to Tellarr</h2>
-					<p class="muted">Your Telegram-based indexer for the *arr suite.</p>
 					@Flash(errMsg, "error-msg")
 					<form method="post" action="/ui/login">
 						<input type="text" name="username" placeholder="Username" autocomplete="username" required/>
@@ -56,7 +55,6 @@ templ RegisterPage(errMsg string, canRegister bool) {
 				<article class="auth-card">
 					@authBrand()
 					<h2>Create account</h2>
-					<p class="muted">Pick a username and password to get started.</p>
 					@Flash(errMsg, "error-msg")
 					if canRegister {
 						<form method="post" action="/ui/register">
@@ -65,7 +63,7 @@ templ RegisterPage(errMsg string, canRegister bool) {
 							<button type="submit">Register</button>
 						</form>
 					} else {
-						<p><mark>Registration is closed</mark> — an account already exists. Tellarr is single-user.</p>
+						<p><mark>Registration is closed</mark> — Tellarr is single-user.</p>
 					}
 					<p class="muted auth-alt">Have an account? <a href="/ui/login">Login</a></p>
 				</article>

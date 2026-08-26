@@ -55,7 +55,6 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 			<div class="page-head">
 				<h2>Indexer channels</h2>
 			</div>
-			<p>Channels marked as indexers are searched by Sonarr/Radarr through the Torznab feeds.</p>
 			@Flash(errMsg, "error-msg")
 			@Flash(msg, "ok-msg")
 			if len(channels) == 0 {
@@ -120,7 +119,7 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 					@iconSearch()
 					<p>No channels match your search.</p>
 				</div>
-				<p><em>Add to Prowlarr registers a Generic Torznab indexer via the Prowlarr API (set <code>PROWLARR_URL</code> + <code>PROWLARR_API_KEY</code>). Alternatively set <code>PROWLARR_DEFINITIONS_DIR</code> to write a custom definition file, or copy/download the YML into Prowlarr's <code>Definitions/Custom</code> folder yourself.</em></p>
+				<p><small class="muted"><em>Add to Prowlarr needs <code>PROWLARR_URL</code> and <code>PROWLARR_API_KEY</code> set.</em></small></p>
 
 				<dialog id="modal-yml" class="modal modal-wide">
 					<div class="modal-frame">

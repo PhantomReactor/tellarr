@@ -250,11 +250,11 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 					</header>
 					<form method="post" action="/ui/downloads/add">
 						<label>
-							Link — Telegram message, magnet, .torrent, hubcloud / gdflix / tmbcloud, telegra.ph or direct file URL
-							<input type="text" name="link" placeholder="https://t.me/c/1234567/89 · magnet:?xt=urn:btih:…" required/>
+							Link
+							<input type="text" name="link" placeholder="Telegram message, magnet, .torrent, or direct file URL" required/>
 						</label>
 						<label>
-							Save as filename <small class="muted">(optional — detected automatically when empty)</small>
+							Save as filename <small class="muted">(optional)</small>
 							<input type="text" name="filename" placeholder="Show.S01E01.mkv"/>
 						</label>
 						<footer class="modal-foot">
@@ -271,7 +271,7 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 						<strong class="modal-title">Delete download?</strong>
 						<button type="button" class="icon-btn" aria-label="Close" onclick="closeModal('modal-delete')">@iconX()</button>
 					</header>
-					<p class="muted modal-hint">Remove just the record, or wipe the downloaded files from disk too. This cannot be undone.</p>
+					<p class="muted modal-hint">This cannot be undone.</p>
 					<div class="stack">
 						<form method="post" action="" id="del-form-record">
 							<button type="submit" class="btn-block outline">Remove record only</button>

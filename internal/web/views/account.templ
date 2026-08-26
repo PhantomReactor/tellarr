@@ -21,7 +21,7 @@ templ AccountPage(username string, msg string, errMsg string) {
 				</div>
 				<button type="submit">Update password</button>
 			</form>
-			<p><em>Minimum 6 characters. Changing your password also invalidates existing API refresh tokens.</em></p>
+			<p><em><small>Changing your password also signs out existing API sessions.</small></em></p>
 		</article>
 	}
 }

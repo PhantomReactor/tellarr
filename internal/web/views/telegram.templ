@@ -6,13 +6,12 @@ templ TelegramPage(step string, sessionId int64, msg string, errMsg string) {
 	@Layout("Tellarr — Telegram", "telegram") {
 		<article>
 			<h2>Connect Telegram</h2>
-			<p>Log in with your Telegram account to use its channels as indexers.</p>
 			@Flash(errMsg, "error-msg")
 			@Flash(msg, "ok-msg")
 
 			if step == "phone" {
 				<form method="post" action="/ui/telegram/phone">
-					<label for="phone">Phone number (international format)</label>
+					<label for="phone">Phone number</label>
 					<input type="tel" id="phone" name="phone" placeholder="+15551234567" required/>
 					<button type="submit">Send code</button>
 				</form>
