@@ -255,9 +255,14 @@ func (s *Server) writeCaps(w http.ResponseWriter) {
     <music-search available="yes" supportedParams="q"/>
   </searching>
   <categories>
-    <category id="5000" title="TV"><subcat id="5030" title="TV/HD"/><subcat id="5040" title="TV/SD"/></category>
+    <category id="1000" title="Console"/>
     <category id="2000" title="Movies"><subcat id="2030" title="Movies/HD"/><subcat id="2040" title="Movies/SD"/></category>
     <category id="3000" title="Audio"><subcat id="3010" title="Audio/MP3"/><subcat id="3040" title="Audio/Lossless"/></category>
+    <category id="4000" title="PC"/>
+    <category id="5000" title="TV"><subcat id="5030" title="TV/HD"/><subcat id="5040" title="TV/SD"/></category>
+    <category id="6000" title="XXX"/>
+    <category id="7000" title="Books"/>
+    <category id="8000" title="Other"/>
   </categories>
 </caps>`
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -318,7 +323,7 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 			continue
 		}
 		filename := documentFilename(doc, "")
-		isMedia, _, isAudio, isTorrent := isIndexableMedia(doc, filename)
+		isMedia, isTorrent := isIndexableMedia(doc, filename)
 		if !isMedia && !isTorrent {
 			continue
 		}
@@ -330,7 +335,6 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 			Size:      doc.Size,
 			MessageId: int64(msg.ID),
 			IsTorrent: isTorrent,
-			IsAudio:   isAudio,
 		})
 	}
 	return out, nil
@@ -342,15 +346,13 @@ func (s *Server) searchChannelDialog(dialog *dbm.Dialog, query string, limit int
 // extension is checked as a fallback alongside MIME/attribute detection.
 var audioExtensions = []string{".flac", ".wav", ".ape", ".wv", ".alac", ".dsf", ".mp3", ".m4a", ".aac", ".ogg", ".opus"}
 
-// isIndexableMedia classifies doc as video, audio, and/or a raw .torrent
-// file — the set of content Tellarr can surface as a search/browse result.
-// isMedia is isVideo || isAudio, kept as a convenience for callers that only
-// care whether the item passes the filter at all.
-func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isVideo, isAudio, isTorrent bool) {
+// isIndexableMedia reports whether doc is content Tellarr can surface as a
+// search/browse result: video, audio, or a raw .torrent file.
+func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isTorrent bool) {
 	isTorrent = strings.EqualFold(doc.MimeType, "application/x-bittorrent") ||
 		strings.HasSuffix(strings.ToLower(filename), ".torrent")
-	isVideo = strings.HasPrefix(doc.MimeType, "video/")
-	isAudio = strings.HasPrefix(doc.MimeType, "audio/")
+	isVideo := strings.HasPrefix(doc.MimeType, "video/")
+	isAudio := strings.HasPrefix(doc.MimeType, "audio/")
 	for _, attr := range doc.Attributes {
 		switch attr.(type) {
 		case *tg.DocumentAttributeVideo:
@@ -368,7 +370,7 @@ func isIndexableMedia(doc *tg.Document, filename string) (isMedia, isVideo, isAu
 			}
 		}
 	}
-	return isVideo || isAudio, isVideo, isAudio, isTorrent
+	return isVideo || isAudio, isTorrent
 }
 
 // MediaInfoResult is the internal enriched search result.
@@ -377,10 +379,6 @@ type MediaInfoResult struct {
 	Size      int64
 	MessageId int64
 	IsTorrent bool
-	// IsAudio flags a non-torrent result classified as audio (vs. video),
-	// used to infer a Torznab category set when registering the channel as
-	// a Prowlarr indexer.
-	IsAudio bool
 	// URL is the exact aggregator link for link-post results ("" for media).
 	URL string
 }

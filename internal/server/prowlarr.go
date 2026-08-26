@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"tellarr/internal/pkg/torznabcats"
 )
 
 // ProwlarrClient talks to a Prowlarr instance over its REST API.
@@ -32,14 +34,18 @@ func NewProwlarrClientFromEnv() *ProwlarrClient {
 
 func (p *ProwlarrClient) Configured() bool { return p.baseURL != "" && p.apiKey != "" }
 
-// Torznab category id sets, matching the <categories> block advertised in
-// writeCaps. Callers pick between these (see inferProwlarrCategories) so a
-// channel gets registered under a category Sonarr/Radarr/Lidarr will
-// actually query against, instead of always defaulting to Movies/TV.
-var (
-	ProwlarrMovieTVCategories = []map[string]any{{"id": 2000}, {"id": 2030}, {"id": 2040}, {"id": 5000}, {"id": 5030}, {"id": 5040}}
-	ProwlarrAudioCategories   = []map[string]any{{"id": 3000}, {"id": 3010}, {"id": 3040}}
-)
+// ProwlarrCategoriesForKey resolves a form-submitted torznabcats.Category
+// key (the Indexers page category picker) to the Prowlarr API's category
+// field shape, defaulting to torznabcats.DefaultKey for an empty/unknown
+// key.
+func ProwlarrCategoriesForKey(key string) []map[string]any {
+	ids := torznabcats.IDsFor(key)
+	out := make([]map[string]any, len(ids))
+	for i, id := range ids {
+		out[i] = map[string]any{"id": id}
+	}
+	return out
+}
 
 type prowField struct {
 	Name  string `json:"name"`
@@ -146,7 +152,7 @@ func (p *ProwlarrClient) AddTorznabIndexer(ctx context.Context, name, feedURL st
 	}
 
 	if len(categories) == 0 {
-		categories = ProwlarrMovieTVCategories
+		categories = ProwlarrCategoriesForKey(torznabcats.DefaultKey)
 	}
 	fields := append([]prowField{}, tpl.Fields...)
 	fields = setProwlarrField(fields, "baseUrl", fu.Scheme+"://"+fu.Host)

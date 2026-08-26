@@ -3,6 +3,8 @@ package views
 import (
 	"net/url"
 	"strings"
+
+	"tellarr/internal/pkg/torznabcats"
 )
 
 type ChannelVM struct {
@@ -96,6 +98,15 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 										if ch.IsIndex {
 											<form method="post" action="/ui/indexers/prowlarr" class="inline-form">
 												<input type="hidden" name="name" value={ ch.Name }/>
+												<select name="category" class="cat-select" aria-label={ "Prowlarr category for " + ch.Name } title="Category to register in Prowlarr">
+													for _, cat := range torznabcats.All {
+														if cat.Key == torznabcats.DefaultKey {
+															<option value={ cat.Key } selected>{ cat.Title }</option>
+														} else {
+															<option value={ cat.Key }>{ cat.Title }</option>
+														}
+													}
+												</select>
 												<button type="submit" class="icon-btn icon-btn-primary" title="Add to Prowlarr" aria-label="Add to Prowlarr">@iconPlus()</button>
 											</form>
 											<button

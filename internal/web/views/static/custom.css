@@ -503,6 +503,18 @@ button.outline:hover {
   color: var(--tl-text);
 }
 
+/* --- Category select (indexers page) ----------------------------------------- */
+
+select.cat-select {
+  width: auto;
+  min-width: 6.5rem;
+  height: 2.15rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.82rem;
+  vertical-align: middle;
+  margin-right: 0.15rem;
+}
+
 /* --- Icon buttons ----------------------------------------------------------- */
 
 button.icon-btn,
