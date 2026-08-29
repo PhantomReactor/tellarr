@@ -21,7 +21,22 @@ func newDownloader() *downloader.Downloader {
 	return downloader.NewDownloader().WithPartSize(downloadPartSize)
 }
 
+// newznabNS is the legacy Newznab DTD namespace — kept declared on the root
+// for any client (or Prowlarr indexer registered as implementation
+// "Newznab") that still looks for xmlns:newznab. It is NOT what our <attr>
+// elements are bound to, though.
 const newznabNS = "http://www.newznab.com/DTD/2010/feeds/attributes/"
+
+// torznabNS is the namespace Prowlarr's TorznabRssParser actually reads
+// item <attr> elements from (see NzbDrone.Core.Indexers.Torznab.
+// TorznabRssParser.ns in Prowlarr's source) — distinct from, and NOT
+// backwards compatible with, the older Newznab DTD URI above. Every item
+// attribute (category, size, seeders, magneturl, infohash, ...) is looked
+// up by this exact namespace URI, so attrs declared under the wrong one are
+// silently invisible to Prowlarr — it doesn't fall back or warn, it just
+// finds zero attrs, which is why using newznabNS here manifested as every
+// single release being rejected with "No categories provided".
+const torznabNS = "http://torznab.com/schemas/2015/feed"
 
 type torznabAttr struct {
 	Name  string `xml:"name,attr"`
@@ -40,7 +55,7 @@ type torznabItem struct {
 	PubDate   string           `xml:"pubDate"`
 	Size      int64            `xml:"size"`
 	Enclosure torznabEnclosure `xml:"enclosure"`
-	Attrs     []torznabAttr    `xml:"newznab:attr"`
+	Attrs     []torznabAttr    `xml:"torznab:attr"`
 }
 
 type torznabChannel struct {
@@ -51,10 +66,11 @@ type torznabChannel struct {
 }
 
 type torznabRSS struct {
-	XMLName xml.Name       `xml:"rss"`
-	Version string         `xml:"version,attr"`
-	Xmlns   string         `xml:"xmlns:newznab,attr"`
-	Channel torznabChannel `xml:"channel"`
+	XMLName      xml.Name       `xml:"rss"`
+	Version      string         `xml:"version,attr"`
+	XmlnsNewznab string         `xml:"xmlns:newznab,attr"`
+	XmlnsTorznab string         `xml:"xmlns:torznab,attr"`
+	Channel      torznabChannel `xml:"channel"`
 }
 
 type torznabError struct {
@@ -182,8 +198,9 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 	}
 
 	feed := torznabRSS{
-		Version: "2.0",
-		Xmlns:   newznabNS,
+		Version:      "2.0",
+		XmlnsNewznab: newznabNS,
+		XmlnsTorznab: torznabNS,
 		Channel: torznabChannel{
 			Title:       "Tellarr[" + channelName + "]",
 			Description: "Tellarr Torznab feed for channel " + channelName,
