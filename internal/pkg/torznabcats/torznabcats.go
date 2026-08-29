@@ -38,12 +38,18 @@ func (c Category) IDs() []int {
 
 // All lists every category Tellarr offers, in standard Newznab numeric
 // order (1000 Console .. 8000 Other).
+// SubCat titles are bare leaf names (e.g. "MP3", "HD") per the Torznab/
+// Newznab spec convention — Torznab clients (Prowlarr included) prefix the
+// parent category's name themselves when displaying a subcat. A
+// fully-qualified name here (e.g. "Audio/MP3") won't match the client's own
+// canonical name for that id, so it gets treated as an unrecognized custom
+// category instead of the standard one.
 var All = []Category{
 	{Key: "console", ID: 1000, Title: "Console"},
-	{Key: "movies", ID: 2000, Title: "Movies", SubCats: []SubCat{{2030, "Movies/HD"}, {2040, "Movies/SD"}}},
-	{Key: "audio", ID: 3000, Title: "Audio", SubCats: []SubCat{{3010, "Audio/MP3"}, {3040, "Audio/Lossless"}}},
+	{Key: "movies", ID: 2000, Title: "Movies", SubCats: []SubCat{{2030, "HD"}, {2040, "SD"}}},
+	{Key: "audio", ID: 3000, Title: "Audio", SubCats: []SubCat{{3010, "MP3"}, {3040, "Lossless"}}},
 	{Key: "pc", ID: 4000, Title: "PC/Software"},
-	{Key: "tv", ID: 5000, Title: "TV", SubCats: []SubCat{{5030, "TV/HD"}, {5040, "TV/SD"}}},
+	{Key: "tv", ID: 5000, Title: "TV", SubCats: []SubCat{{5030, "HD"}, {5040, "SD"}}},
 	{Key: "xxx", ID: 6000, Title: "XXX"},
 	{Key: "books", ID: 7000, Title: "Books"},
 	{Key: "other", ID: 8000, Title: "Other"},
