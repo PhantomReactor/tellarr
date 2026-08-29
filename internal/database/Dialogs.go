@@ -28,11 +28,20 @@ func (d *DialogsRepository) CreateDialog(dialog models.Dialog) (int64, error) {
 func (d *DialogsRepository) UpdateDialog(dialog models.Dialog) error {
 	_, err := d.db.NamedExec(
 		`update dialogs set session_id = :session_id, phone_number = :phone_number, name = :name, type = :type, dialog_id = :dialog_id, access_hash = :access_hash, indexer = :indexer,
-		active = :active, created_at = :created_at, updated_at = :updated_at where id = :id`, dialog)
+		active = :active, categories = :categories, created_at = :created_at, updated_at = :updated_at where id = :id`, dialog)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// UpdateDialogCategories persists the torznabcats.Category keys (comma
+// separated — see torznabcats.JoinKeys) a channel was registered under, so
+// the Torznab caps endpoint can advertise only what that channel actually
+// carries instead of every category.
+func (d *DialogsRepository) UpdateDialogCategories(name string, categories string) error {
+	_, err := d.db.Exec(`update dialogs set categories = ?, updated_at = CURRENT_TIMESTAMP where name = ?`, categories, name)
+	return err
 }
 
 func (d *DialogsRepository) GetDialogByName(name string) (*models.Dialog, error) {

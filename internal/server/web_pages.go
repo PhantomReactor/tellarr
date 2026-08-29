@@ -20,6 +20,7 @@ import (
 
 	"tellarr/internal/database/models"
 	"tellarr/internal/pkg/enums"
+	"tellarr/internal/pkg/torznabcats"
 	"tellarr/internal/web/views"
 )
 
@@ -185,7 +186,11 @@ func (s *Server) webIndexers(w http.ResponseWriter, r *http.Request) {
 	}
 	vms := make([]views.ChannelVM, 0, len(dialogs))
 	for _, d := range dialogs {
-		vms = append(vms, views.ChannelVM{Name: d.Name, IsIndex: d.Indexer})
+		keys := torznabcats.ParseKeys(d.Categories)
+		if len(keys) == 0 {
+			keys = []string{torznabcats.DefaultKey}
+		}
+		vms = append(vms, views.ChannelVM{Name: d.Name, IsIndex: d.Indexer, Categories: keys})
 	}
 	_ = views.IndexersPage(vms, popFlash(w, r, "msg"), errMsg).Render(r.Context(), w)
 }
@@ -244,7 +249,16 @@ func (s *Server) webIndexerProwlarr(w http.ResponseWriter, r *http.Request) {
 	}
 	indexerName := "Tellarr - " + channel
 
-	categories := ProwlarrCategoriesForKeys(r.Form["category"])
+	categoryKeys := r.Form["category"]
+	// Persist the picked categories against the channel itself — this is
+	// what the Torznab caps endpoint (writeCaps) reads to advertise only
+	// what this channel actually carries, since Prowlarr's built-in
+	// Generic Torznab implementation has no per-indexer categories field
+	// of its own and discovers categories purely from our caps response.
+	if err := s.dialogRepo.UpdateDialogCategories(channel, torznabcats.JoinKeys(categoryKeys)); err != nil {
+		slog.Error("saving indexer categories failed", "channel", channel, "err", err)
+	}
+	categories := ProwlarrCategoriesForKeys(categoryKeys)
 
 	prowlarr := NewProwlarrClientFromEnv()
 	switch {

@@ -109,8 +109,10 @@ document.addEventListener("click", function (e) {
 });
 
 // Add-to-Prowlarr category picker: "Add to Prowlarr" buttons carry
-// data-channel and rewire #modal-prowlarr-cat's hidden name field (and
-// reset the category checkboxes to the default) before showing it.
+// data-channel and a comma-separated data-categories (the channel's
+// currently saved torznabcats keys, defaulting server-side when unset) —
+// rewire #modal-prowlarr-cat's hidden name field and check exactly those
+// boxes before showing it.
 function openProwlarrCategoryModal(btn, ev) {
   var name = btn.getAttribute("data-channel");
   if (!name) return;
@@ -118,9 +120,9 @@ function openProwlarrCategoryModal(btn, ev) {
   var title = document.getElementById("prowlarr-cat-title");
   if (nameInput) nameInput.value = name;
   if (title) title.textContent = 'Add "' + name + '" to Prowlarr';
-  var defaultCategory = btn.getAttribute("data-default-category");
+  var selected = (btn.getAttribute("data-categories") || "").split(",");
   document.querySelectorAll('#modal-prowlarr-cat input[name="category"]').forEach(function (cb) {
-    cb.checked = cb.value === defaultCategory;
+    cb.checked = selected.indexOf(cb.value) !== -1;
   });
   openModal("modal-prowlarr-cat");
 }

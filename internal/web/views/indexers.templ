@@ -8,8 +8,9 @@ import (
 )
 
 type ChannelVM struct {
-	Name    string
-	IsIndex bool
+	Name       string
+	IsIndex    bool
+	Categories []string // torznabcats.Category keys this channel is registered under
 }
 
 // slugifyName mirrors the server-side slugify used for definition filenames.
@@ -103,7 +104,7 @@ templ IndexersPage(channels []ChannelVM, msg string, errMsg string) {
 												aria-label="Add to Prowlarr"
 												onclick="openProwlarrCategoryModal(this, event)"
 												data-channel={ ch.Name }
-												data-default-category={ torznabcats.DefaultKey }
+												data-categories={ strings.Join(ch.Categories, ",") }
 											>@iconPlus()</button>
 											<button
 												type="button"

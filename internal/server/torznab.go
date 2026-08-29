@@ -14,6 +14,7 @@ import (
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
 	dbm "tellarr/internal/database/models"
+	"tellarr/internal/pkg/torznabcats"
 )
 
 func newDownloader() *downloader.Downloader {
@@ -97,19 +98,6 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 		writeTorznabError(w, 100, "Incorrect user credentials")
 		return
 	}
-	t := r.URL.Query().Get("t")
-
-	if t == "caps" {
-		s.writeCaps(w)
-		return
-	}
-	// Standard torznab function names: search, tvsearch, movie
-	// ("movieSearch" kept for backwards compatibility).
-	t = strings.ToLower(t)
-	if t != "search" && t != "tvsearch" && t != "movie" && t != "moviesearch" {
-		writeTorznabError(w, 202, "No such function: "+t)
-		return
-	}
 
 	// chi matches this route on the raw (escaped) path because the segment
 	// may itself contain an escaped "/" (channel names can contain slashes),
@@ -129,6 +117,20 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 		writeTorznabError(w, 300, "Unknown indexer channel: "+channelName)
 		return
 	}
+	catKeys := torznabcats.ParseKeys(dialog.Categories)
+
+	t := r.URL.Query().Get("t")
+	if t == "caps" {
+		s.writeCaps(w, catKeys)
+		return
+	}
+	// Standard torznab function names: search, tvsearch, movie
+	// ("movieSearch" kept for backwards compatibility).
+	t = strings.ToLower(t)
+	if t != "search" && t != "tvsearch" && t != "movie" && t != "moviesearch" {
+		writeTorznabError(w, 202, "No such function: "+t)
+		return
+	}
 
 	query := buildTorznabQuery(r)
 	results, err := s.searchChannelDialog(dialog, query, 50)
@@ -136,6 +138,17 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 		slog.Error("torznab search failed", "channel", channelName, "err", err)
 		writeTorznabError(w, 900, "Search failed")
 		return
+	}
+
+	// Emit parent + subcategory ids for whichever categories this channel
+	// was registered under (see torznabcats), so every result carries the
+	// same category set the caps endpoint advertises — no more, no less —
+	// and survives category-intersection filtering in Sonarr/Radarr/Lidarr/
+	// Prowlarr for exactly the query types that channel actually applies to.
+	categoryIDs := torznabcats.IDsForKeys(catKeys)
+	categories := make([]string, len(categoryIDs))
+	for i, id := range categoryIDs {
+		categories[i] = strconv.Itoa(id)
 	}
 
 	base := s.baseURL()
@@ -149,11 +162,6 @@ func (s *Server) HandleTorznab(w http.ResponseWriter, r *http.Request) {
 			PubDate: pubDate,
 			Size:    res.Size,
 		}
-		// Emit parent + common subcategories for movies, TV, AND audio so
-		// results survive category intersection filtering in
-		// Sonarr/Radarr/Lidarr/Prowlarr regardless of query type or which
-		// categories were picked in their indexer settings.
-		categories := []string{"2000", "2030", "2040", "5000", "5030", "5040", "3000", "3010", "3040"}
 		attrs := make([]torznabAttr, 0, 2+len(categories))
 		for _, c := range categories {
 			attrs = append(attrs, torznabAttr{Name: "category", Value: c})
@@ -242,8 +250,26 @@ func buildTorznabQuery(r *http.Request) string {
 	return q
 }
 
-func (s *Server) writeCaps(w http.ResponseWriter) {
-	caps := `<?xml version="1.0" encoding="UTF-8"?>
+// writeCaps renders the Torznab caps response, advertising only the
+// categories this channel was actually registered under (catKeys — see
+// torznabcats.ParseKeys) so Prowlarr's "Category" column, and any *Arr
+// app's category-intersection filtering, reflect what the channel really
+// carries instead of a fixed superset.
+func (s *Server) writeCaps(w http.ResponseWriter, catKeys []string) {
+	var cats strings.Builder
+	for _, c := range torznabcats.Selected(catKeys) {
+		if len(c.SubCats) == 0 {
+			fmt.Fprintf(&cats, "    <category id=\"%d\" name=%q/>\n", c.ID, c.Title)
+			continue
+		}
+		fmt.Fprintf(&cats, "    <category id=\"%d\" name=%q>", c.ID, c.Title)
+		for _, sc := range c.SubCats {
+			fmt.Fprintf(&cats, "<subcat id=\"%d\" name=%q/>", sc.ID, sc.Title)
+		}
+		cats.WriteString("</category>\n")
+	}
+
+	caps := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <caps>
   <server version="1.0" title="Tellarr"/>
   <limits max="50" default="50"/>
@@ -255,16 +281,8 @@ func (s *Server) writeCaps(w http.ResponseWriter) {
     <music-search available="yes" supportedParams="q"/>
   </searching>
   <categories>
-    <category id="1000" title="Console"/>
-    <category id="2000" title="Movies"><subcat id="2030" title="Movies/HD"/><subcat id="2040" title="Movies/SD"/></category>
-    <category id="3000" title="Audio"><subcat id="3010" title="Audio/MP3"/><subcat id="3040" title="Audio/Lossless"/></category>
-    <category id="4000" title="PC"/>
-    <category id="5000" title="TV"><subcat id="5030" title="TV/HD"/><subcat id="5040" title="TV/SD"/></category>
-    <category id="6000" title="XXX"/>
-    <category id="7000" title="Books"/>
-    <category id="8000" title="Other"/>
-  </categories>
-</caps>`
+%s  </categories>
+</caps>`, cats.String())
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	_, _ = w.Write([]byte(caps))
 }
