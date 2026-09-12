@@ -614,16 +614,15 @@ func (s *Server) RestartDownload(row *db.TorrentDownload) (*db.TorrentDownload, 
 	live := &liveDownload{cancel: cancel, total: doc.Size}
 	s.dm.mu.Lock()
 	s.dm.live[id] = live
+	if queued {
+		s.dm.queue = append(s.dm.queue, *row)
+	}
 	s.dm.mu.Unlock()
 	_ = s.dm.repo.UpdateProgress(id, row.Written, state, "")
 	if queued {
-		s.dm.queue = append(s.dm.queue, *row)
-		s.dm.mu.Unlock()
 		slog.Info("download queued", "id", id, "name", row.Filename)
 		return row, nil
 	}
-	_ = row
-	s.dm.mu.Unlock()
 	if err := s.dm.openTransfer(ctx, row, live, api, doc, resumeFrom); err != nil {
 		s.dm.releaseSlot()
 		cancel()
