@@ -104,6 +104,11 @@ func (s *Server) getTelegramClient(sessionId int64) (*TelegramSession, error) {
 	s.mu.Unlock()
 	slog.Info("creatung new session")
 	telegramClient := telegram.NewClient(s.appId, s.appHash, telegram.Options{
+		// tdl (iyear/tdl) defaults: longer send-ACK retry window makes
+		// multi-minute parallel transfers survive transient connection loss.
+		// Copy it directly.
+		RetryInterval: 5 * time.Second,
+		MaxRetries:    5,
 		SessionStorage: &database.DBSessionStorage{
 			SessionRepository: s.sessionRepo,
 			SessionID:         sessionId,

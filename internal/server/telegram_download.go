@@ -155,6 +155,13 @@ func transientInvokeErr(ctx context.Context, err error) bool {
 	if _, ok := tgerr.AsFloodWait(err); ok {
 		return false // handled by floodWaitInvoker
 	}
+	var rr *rpc.RetryLimitReachedErr
+	if errors.As(err, &rr) {
+		// The rpc engine sent the message but never got an ACK within its
+		// internal retry budget — usually a stalled pooled connection.
+		// Retrying re-acquires one (often fresh) instead.
+		return true
+	}
 	switch {
 	case errors.Is(err, rpc.ErrEngineClosed), // "engine was closed"
 		errors.Is(err, pool.ErrConnDead), // "connection dead"
@@ -165,6 +172,47 @@ func transientInvokeErr(ctx context.Context, err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+// internalRetryInvoker mirrors tdl's retry middleware
+// (iyear/tdl core/middlewares/retry): Telegram's internal server errors are
+// transient and must be retried instead of killing a long transfer — this is
+// the fix tdl shipped in v0.13.0 for mid-download failures (#336).
+type internalRetryInvoker struct {
+	next tg.Invoker
+	max  int
+}
+
+var internalRetriableErrors = []string{
+	"Timedout",
+	"No workers running",
+	"RPC_CALL_FAIL",
+	"RPC_MCGET_FAIL",
+	"WORKER_BUSY_TOO_LONG_RETRY",
+	"memory limit exit",
+}
+
+func (r internalRetryInvoker) Invoke(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
+	for attempt := 0; ; attempt++ {
+		err := r.next.Invoke(ctx, input, output)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil || attempt >= r.max || !tgerr.Is(err, internalRetriableErrors...) {
+			return err
+		}
+		delay := time.Duration(attempt+1) * 500 * time.Millisecond
+		if delay > 5*time.Second {
+			delay = 5 * time.Second
+		}
+		slog.Warn("retriable telegram rpc error during download, retrying",
+			"attempt", attempt+1, "max", r.max, "delay", delay, "err", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
 }
 
 // downloadAPI returns a *tg.Client whose RPCs are distributed across a pool
@@ -207,6 +255,6 @@ func (t *TelegramSession) downloadAPI(ctx context.Context, dc int) (*tg.Client, 
 	if err != nil {
 		return nil, err
 	}
-	t.dlPools[dc] = floodWaitInvoker{next: retryInvoker{next: inv, max: 8}}
+	t.dlPools[dc] = floodWaitInvoker{next: retryInvoker{next: internalRetryInvoker{next: inv, max: 8}, max: 8}}
 	return tg.NewClient(t.dlPools[dc]), nil
 }

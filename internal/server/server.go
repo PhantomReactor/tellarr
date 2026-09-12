@@ -84,6 +84,9 @@ func NewServer() *http.Server {
 
 	for _, sessionId := range sessionIds {
 		telegramClient := telegram.NewClient(appId, appHash, telegram.Options{
+			// Same tuning as telegram_routes.go (see tdl's tclient).
+			RetryInterval: 5 * time.Second,
+			MaxRetries:    5,
 			SessionStorage: &database.DBSessionStorage{
 				SessionRepository: sessionRepo,
 				SessionID:         sessionId,
