@@ -818,11 +818,18 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
    widens the summary and drags the tag left of center, so kill it hard. */
 .downloads-table td.cell-category,
 .downloads-table td.cell-state { text-align: center; }
+/* The category badge must line up with the state pill: the shared .tag rule
+   adds margin-top that the .pill doesn't have, so normalize it here and give
+   both the same effective vertical size. */
+.downloads-table .cell-category .tag { margin-top: 0; padding: 0.18rem 0.55rem; font-size: 0.72rem; }
 .downloads-table .cat-edit > summary::after {
   content: none !important;
   display: none !important;
 }
-.cat-edit { display: block; width: fit-content; margin-inline: auto; }
+/* margin: 0 auto (a) centers (b) drops pico's 1rem accordion margin-bottom on
+   <details>, which was pushing the badge above the state pill's line —
+   verified: details had mb=15.5px making the badge sit ~7px higher. */
+.cat-edit { display: block; width: fit-content; margin: 0 auto; }
 .cat-edit > summary {
   cursor: pointer;
   list-style: none;
