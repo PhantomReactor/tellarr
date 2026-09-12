@@ -285,7 +285,7 @@ func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *
 		FileReference: doc.FileReference,
 	}
 	total := doc.Size
-	chunk := make([]byte, 0, downloadPartSize)
+	chunk := make([]byte, downloadPartSize, downloadPartSize)
 
 	for offset := resumeFrom; offset < total; {
 		n, err := fetchChunk(ctx, api, location, offset, chunk)
