@@ -564,6 +564,33 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 		} else {
 			msg = "resumed"
 		}
+	case "restart":
+		// Discard partial data and start the transfer over from zero. Any
+		// live transfer is cancelled first; wait for it to wind down so its
+		// deferred state write can't land after the fresh one and clobber
+		// the restarted row, then re-resolve.
+		if err := s.dm.Pause(id); err != nil {
+			slog.Warn("restart pause before retransfer failed", "id", id, "err", err)
+		}
+		for i := 0; i < 30 && s.dm.IsLive(id); i++ {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if s.dm.IsLive(id) {
+			slog.Warn("restart: old transfer did not stop in time", "id", id)
+		}
+		if row.Origin == models.OriginTelegram && row.ContentPath != "" {
+			if err := os.Remove(row.ContentPath); err != nil && !os.IsNotExist(err) {
+				slog.Warn("restart could not remove partial file", "id", id, "err", err)
+			} else if err == nil {
+				slog.Info("restart removed partial file", "id", id, "path", row.ContentPath)
+			}
+			_ = s.downloadRepo.UpdateProgress(id, 0, models.StatePaused, "")
+		}
+		if _, err := s.RestartDownload(row); err != nil {
+			errMsg = "restart failed: telegram session may be offline"
+		} else {
+			msg = "restarted from the beginning"
+		}
 	case "delete", "delete-files":
 		delFiles := action == "delete-files"
 		// aria2-backed rows must also have their RPC job stopped, or the

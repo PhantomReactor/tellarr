@@ -336,12 +336,17 @@ func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentF
 			case <-time.After(delay):
 			}
 		}
+		// Bound each attempt: a half-dead pooled connection with no read
+		// deadline would otherwise block forever and leave the row showing
+		// "downloading" without any transfer happening.
+		attemptCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		req := &tg.UploadGetFileRequest{
 			Location: location,
 			Offset:   offset,
 			Limit:    downloadPartSize,
 		}
-		r, err := api.UploadGetFile(ctx, req)
+		r, err := api.UploadGetFile(attemptCtx, req)
+		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
 				return 0, ctx.Err()
@@ -360,6 +365,7 @@ func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentF
 				continue
 			}
 			lastErr = err
+			slog.Warn("telegram chunk fetch failed, retrying", "offset", offset, "attempt", attempt+1, "err", err)
 			continue
 		}
 		if data, ok := r.(*tg.UploadFile); ok {
@@ -530,6 +536,14 @@ func (dm *DownloadManager) Pause(id string) error {
 		return nil
 	}
 	return dm.repo.SetState(id, db.StatePaused)
+}
+
+// IsLive reports whether an active transfer goroutine is registered for id.
+func (dm *DownloadManager) IsLive(id string) bool {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	_, ok := dm.live[id]
+	return ok
 }
 
 func (dm *DownloadManager) MarkLive(id string) {

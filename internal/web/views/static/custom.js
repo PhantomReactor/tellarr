@@ -167,6 +167,17 @@ function askDelete(btn, ev) {
   openModal("modal-delete");
 }
 
+// Restart confirmation: buttons carry data-restart-id and rewire the form
+// inside #modal-restart before showing it.
+function askRestart(btn, ev) {
+  ev.preventDefault();
+  var id = btn.getAttribute("data-restart-id");
+  if (!id) return;
+  var form = document.getElementById("restart-form");
+  if (form) form.action = "/ui/downloads/" + encodeURIComponent(id) + "/restart";
+  openModal("modal-restart");
+}
+
 // --- Client-side search ------------------------------------------------------
 
 var tellarrFilters = {};
