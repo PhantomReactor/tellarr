@@ -825,7 +825,6 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
 /* Block + auto margins = exact centering, immune to trailing inline
    whitespace in the templ output. */
 .cat-edit { display: block; width: fit-content; margin-inline: auto; }
-.cat-edit { display: inline-block; }
 .cat-edit > summary {
   cursor: pointer;
   list-style: none;
