@@ -262,11 +262,16 @@ func (dm *DownloadManager) openTransfer(ctx context.Context, row *db.TorrentDown
 
 // runTransfer drives one active download and returns its slot to the queue
 // when it ends, whatever the reason.
-// The transfer is sequential (one 1 MiB getFile per round-trip) instead of
-// gotd's parallel reader so that written bytes form a contiguous prefix:
-// that makes resume-after-failure exact — we simply continue at the stored
-// offset, no holes to figure out. Per-chunk retries absorb the pooled
-// connection churn ("engine was closed") that used to abort the transfer.
+//
+// Downloads are fetched by a small pool of parallel workers (network is the
+// bottleneck: one request in flight is RTT-bound, several are bandwidth-bound)
+// but bytes are written strictly sequentially: worker k only issues chunk
+// indexes drawn round-robin from a shared counter, chunks land in a bounded
+// pending map, and the writer consumes frontier indexes in order. That keeps
+// written bytes a contiguous prefix, so resume-after-failure / pause is still
+// exact — continue at the stored offset, no holes to reconstruct. Per-chunk
+// retries absorb the pooled-connection churn ("engine was closed") that used
+// to abort the transfer.
 func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *db.TorrentDownload, live *liveDownload, api *tg.Client, doc *tg.Document, resumeFrom int64) {
 	id := row.ID
 	defer func() {
@@ -285,54 +290,179 @@ func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *
 		FileReference: doc.FileReference,
 	}
 	total := doc.Size
-	chunk := make([]byte, downloadPartSize, downloadPartSize)
+	if resumeFrom >= total {
+		// Nothing left to fetch (partial-size weirdness): treat as complete.
+		if err := dm.repo.UpdateProgress(id, total, db.StateDone, ""); err != nil {
+			slog.Error("failed to finalize download", "id", id, "err", err)
+		}
+		return
+	}
 
-	for offset := resumeFrom; offset < total; {
-		n, err := fetchChunk(ctx, api, location, offset, chunk)
-		if err != nil {
-			written := live.written.Load()
-			switch {
-			case errors.Is(err, context.Canceled):
-				// paused by user or superseded
-				if err = dm.repo.UpdateProgress(id, written, db.StatePaused, ""); err != nil {
-					slog.Error("failed to finalize download", "id", id, "err", err)
+	threads := min(bestThreads(total, maxDownloadThreads), downloadPoolSize)
+	parts := (total + downloadPartSize - 1) / downloadPartSize
+
+	// Shared chunk conveyor: workers fill pending[frontier..frontier+window),
+	// the writer drains strictly in order. Both sides park on one condition.
+	q := &chunkQueue{pending: make(map[int64][]byte, threads*2), eof: -1}
+	q.cond = sync.NewCond(&q.mu)
+	q.nextToIssue = resumeFrom / downloadPartSize
+	q.window = int64(threads * 2)
+
+	var wg sync.WaitGroup
+	for w := 0; w < threads; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				q.mu.Lock()
+				for !q.stopped && q.err == nil && q.eof < 0 && q.nextToIssue >= q.frontier+q.window {
+					q.cond.Wait()
 				}
-			default:
-				slog.Error("download failed", "id", id, "err", err)
-				if err = dm.repo.UpdateProgress(id, written, db.StateError, err.Error()); err != nil {
-					slog.Error("failed to finalize download", "id", id, "err", err)
+				if q.stopped || q.err != nil || q.eof >= 0 {
+					q.mu.Unlock()
+					return
+				}
+				idx := q.nextToIssue
+				q.nextToIssue++
+				q.mu.Unlock()
+
+				offset := idx * downloadPartSize
+				if offset >= total {
+					// Raced past EOF: treat as terminator like a short chunk.
+					q.mu.Lock()
+					if q.eof < 0 {
+						q.eof = idx
+					}
+					q.cond.Broadcast()
+					q.mu.Unlock()
+					return
+				}
+
+				b, err := fetchChunk(ctx, api, location, offset, downloadPartSize)
+
+				q.mu.Lock()
+				if err != nil {
+					if q.err == nil {
+						q.err = err
+					}
+				} else if len(b) < downloadPartSize && q.eof < 0 {
+					q.eof = idx
+					if len(b) > 0 {
+						q.pending[idx] = b
+					}
+				} else if len(b) > 0 {
+					q.pending[idx] = b
+				}
+				q.cond.Broadcast()
+				q.mu.Unlock()
+				if err != nil {
+					return
 				}
 			}
-			return
-		}
-		if n < 1 {
-			break // Telegram reported end of file
-		}
-		if _, err := file.WriteAt(chunk[:n], offset); err != nil {
-			slog.Error("download write failed", "id", id, "err", err)
-			_ = dm.repo.UpdateProgress(id, live.written.Load(), db.StateError, "disk write: "+err.Error())
-			return
-		}
-		offset += int64(n)
-		live.written.Store(offset)
-		dm.maybeFlush(id)
+		}()
 	}
 
-	if err := dm.repo.UpdateProgress(id, live.written.Load(), db.StateDone, ""); err != nil {
-		slog.Error("failed to finalize download", "id", id, "err", err)
+	done, finalErr, written := false, error(nil), int64(resumeFrom)
+	frontier := resumeFrom / downloadPartSize
+	for !done {
+		var buf []byte
+		var failErr error
+		q.mu.Lock()
+		for {
+			if q.stopped {
+				break
+			}
+			if b, ok := q.pending[frontier]; ok {
+				delete(q.pending, frontier)
+				buf = b
+				break
+			}
+			if q.err != nil {
+				failErr = q.err
+				break
+			}
+			q.cond.Wait()
+		}
+		q.frontier = frontier + 1
+		q.cond.Broadcast()
+		q.mu.Unlock()
+
+		if buf == nil { // transfer error from a worker
+			finalErr = failErr
+			break
+		}
+		offset := frontier * downloadPartSize
+		if n, werr := file.WriteAt(buf, offset); werr != nil || n < len(buf) {
+			if werr == nil {
+				werr = io.ErrShortWrite
+			}
+			slog.Error("download write failed", "id", id, "err", werr)
+			finalErr = fmt.Errorf("disk write: %w", werr)
+			written = live.written.Load()
+			break
+		}
+		written = offset + int64(len(buf))
+		live.written.Store(written)
+		dm.maybeFlush(id)
+
+		// Last chunk reported short? Everything is written, transfer done.
+		q.mu.Lock()
+		eof := q.eof
+		q.mu.Unlock()
+		if (eof >= 0 && frontier >= eof) || frontier >= parts-1 || written >= total {
+			done = true
+		}
+		frontier++
 	}
+	q.mu.Lock()
+	q.stopped = true
+	q.cond.Broadcast()
+	q.mu.Unlock()
+	wg.Wait()
+
+	live.written.Store(written)
+	switch {
+	case done, finalErr == nil:
+		if err := dm.repo.UpdateProgress(id, written, db.StateDone, ""); err != nil {
+			slog.Error("failed to finalize download", "id", id, "err", err)
+		}
+	case errors.Is(finalErr, context.Canceled), ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled):
+		// paused by user or superseded
+		if err := dm.repo.UpdateProgress(id, written, db.StatePaused, ""); err != nil {
+			slog.Error("failed to finalize download", "id", id, "err", err)
+		}
+	default:
+		slog.Error("download failed", "id", id, "err", finalErr)
+		if err := dm.repo.UpdateProgress(id, written, db.StateError, finalErr.Error()); err != nil {
+			slog.Error("failed to finalize download", "id", id, "err", err)
+		}
+	}
+}
+
+// chunkQueue carries prefetched chunks between fetch workers and the
+// sequential writer inside runTransfer.
+type chunkQueue struct {
+	mu          sync.Mutex
+	cond        *sync.Cond
+	pending     map[int64][]byte // chunk index -> data, frontier..frontier+window
+	nextToIssue int64            // next chunk index for any worker to fetch
+	frontier    int64            // next chunk index the writer expects
+	window      int64            // max in-flight chunks ahead of frontier
+	err         error            // first worker error, sticky
+	eof         int64            // index of first reported short chunk; -1 = none
+	stopped     bool             // writer is done; workers must exit
 }
 
 // fetchChunk downloads one chunk at offset with bounded retries on transient
 // pooled-connection errors (engine closed, conn dead, EOF, flood wait...).
-func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentFileLocation, offset int64, buf []byte) (int, error) {
+func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentFileLocation, offset int64, limit int) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < 10; attempt++ {
 		if attempt > 0 {
 			delay := min(time.Duration(attempt)*time.Second, 10*time.Second)
 			select {
 			case <-ctx.Done():
-				return 0, ctx.Err()
+				return nil, ctx.Err()
 			case <-time.After(delay):
 			}
 		}
@@ -349,7 +479,7 @@ func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentF
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
-				return 0, ctx.Err()
+				return nil, ctx.Err()
 			}
 			if wait, ok := tgerr.AsFloodWait(err); ok {
 				lastErr = err
@@ -359,7 +489,7 @@ func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentF
 				slog.Warn("telegram flood wait between chunks", "offset", offset, "attempt", attempt+1, "wait", wait)
 				select {
 				case <-ctx.Done():
-					return 0, ctx.Err()
+					return nil, ctx.Err()
 				case <-time.After(time.Duration(wait) * time.Second):
 				}
 				continue
@@ -369,12 +499,11 @@ func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentF
 			continue
 		}
 		if data, ok := r.(*tg.UploadFile); ok {
-			n := copy(buf, data.Bytes)
-			return n, nil
+			return data.Bytes, nil
 		}
-		return 0, fmt.Errorf("unexpected getFile response %T", r)
+		return nil, fmt.Errorf("unexpected getFile response %T", r)
 	}
-	return 0, lastErr
+	return nil, lastErr
 }
 
 // releaseSlot frees one transfer slot. Callers should follow with pump().
