@@ -138,7 +138,7 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 	<div
 		id="downloads-table"
 		hx-get="/ui/downloads/table"
-		hx-trigger="every 2s [!document.querySelector('dialog[open]')]"
+		hx-trigger="every 2s [!document.querySelector('dialog[open]') && !(document.activeElement && document.activeElement.tagName === 'SELECT')]"
 		hx-swap="outerHTML"
 	>
 		if len(rows) == 0 {
@@ -208,14 +208,16 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 											}
 										</summary>
 										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/category") } class="cat-edit-form">
-											<input type="text" name="category" list={ "cats-" + row.ID } value={ row.Category } placeholder="radarr, sonarr…" maxlength="100" aria-label="Category"/>
-											<datalist id={ "cats-" + row.ID }>
+											<select name="category" onchange="this.form.submit()" aria-label="Category">
+												<option value="">no category</option>
 												for _, cat := range categories {
-													if cat != row.Category {
-														<option value={ cat }></option>
+													if cat == row.Category {
+														<option value={ cat } selected>{ cat }</option>
+													} else {
+														<option value={ cat }>{ cat }</option>
 													}
 												}
-											</datalist>
+											</select>
 											<button type="submit" class="icon-btn" title="Save category" aria-label="Save category">@iconDownload()</button>
 										</form>
 									</details>
@@ -278,12 +280,12 @@ templ DownloadsPage(rows []DownloadRowVM, categories []string, msg string, errMs
 						</label>
 						<label>
 							Category <small class="muted">(e.g. radarr, sonarr — so the arrs track it)</small>
-							<input type="text" name="category" list="known-categories" maxlength="100" autocomplete="off" placeholder="radarr"/>
-							<datalist id="known-categories">
+							<select name="category" aria-label="Category">
+								<option value="">no category</option>
 								for _, cat := range categories {
-									<option value={ cat }></option>
+									<option value={ cat }>{ cat }</option>
 								}
-							</datalist>
+							</select>
 						</label>
 						<label>
 							Save as filename <small class="muted">(optional)</small>

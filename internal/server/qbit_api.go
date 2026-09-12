@@ -58,6 +58,12 @@ func (st *qbCategoryStore) all() map[string]string {
 func (st *qbCategoryStore) set(name, savePath string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	// Only create/overwrite with a meaningful savePath; an empty one (e.g.
+	// a label picked in the UI for the first time) leaves the arr's
+	// registered savePath intact.
+	if existing, ok := st.cats[name]; ok && existing != "" && savePath == "" {
+		return
+	}
 	st.cats[name] = savePath
 }
 
@@ -68,12 +74,15 @@ func (st *qbCategoryStore) delete(name string) {
 }
 
 // knownCategories merges the categories created through the WebUI API with
-// those already attached to download rows (e.g. categories the arrs sent
-// along with torrents/add but never registered via createCategory). The
-// Downloads page uses this to offer a qBittorrent-style category picker.
+// those already attached to download rows, plus the labels the *arr apps
+// conventionally use for their download-client categories. The Downloads
+// page uses this to offer a qBittorrent-style category selector.
 func (s *Server) knownCategories() []string {
 	seen := make(map[string]bool)
 	for name := range qbCategories.all() {
+		seen[name] = true
+	}
+	for _, name := range arrDefaultCategories {
 		seen[name] = true
 	}
 	if rows, err := s.downloadRepo.List(); err == nil {
@@ -90,6 +99,11 @@ func (s *Server) knownCategories() []string {
 	sort.Strings(out)
 	return out
 }
+
+// arrDefaultCategories are the standard download-client category labels the
+// *arr apps conventionally register with qBittorrent (each app also auto-
+// creates its own label via createCategory when the client is set up).
+var arrDefaultCategories = []string{"radarr", "sonarr", "lidarr", "readarr", "whisparr"}
 
 func (st *qbSessionStore) create() string {
 	buf := make([]byte, 16)
