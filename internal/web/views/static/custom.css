@@ -822,9 +822,18 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
   content: none !important;
   display: none !important;
 }
-/* Block + auto margins = exact centering, immune to trailing inline
-   whitespace in the templ output. */
 .cat-edit { display: block; width: fit-content; margin-inline: auto; }
+/* Vertically center the category/state badges too: rows can be much taller
+   than the badge (long names, errors), so without flex centering the badge
+   hugs the top of the cell. */
+@media (min-width: 761px) {
+  .downloads-table td.cell-category,
+  .downloads-table td.cell-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 .cat-edit > summary {
   cursor: pointer;
   list-style: none;
