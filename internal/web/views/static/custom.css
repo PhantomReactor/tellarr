@@ -791,6 +791,41 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
   border-color: var(--tl-border);
   background: rgba(255, 255, 255, 0.04);
 }
+
+/* --- Per-row category editor (Downloads table) ------------------------------- */
+/* qBittorrent-style category relabeling: the tag in the Category column is a
+   <details> trigger; opening it swaps the tag for a one-line form (text input
+   + datalist of known categories + save button). The htmx polling swap keeps
+   replacing the table, so an inline form beats a modal here — the input would
+   lose focus when a modal sits open... actually polling pauses while the
+   input is focused is not guaranteed, hence inline: a two-second re-render
+   only refreshes text nodes, not focus. */
+.cell-category { min-width: 9rem; }
+.cat-edit { display: inline-block; }
+.cat-edit > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.cat-edit > summary::-webkit-details-marker { display: none; }
+.cat-edit[open] > summary { display: none; }
+.cat-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.cat-edit-form input[type="text"] {
+  width: 9rem;
+  height: 1.8rem;
+  padding: 0 0.45rem;
+  font-size: 0.78rem;
+  margin: 0;
+  box-sizing: border-box;
+}
+.cat-edit-form .icon-btn {
+  width: 1.8rem;
+  height: 1.8rem;
+  color: var(--tl-accent);
+}
 .dl-error {
   display: block;
   margin-top: 0.2rem;

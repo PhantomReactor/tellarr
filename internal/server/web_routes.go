@@ -57,6 +57,7 @@ func (s *Server) RegisterWebRoutes(r chi.Router) {
 		r.Get("/downloads", s.webDownloads)
 		r.Get("/downloads/table", s.webDownloadsTable)
 		r.Post("/downloads/add", s.webDownloadAdd)
+		r.Post("/downloads/{id}/category", s.webDownloadSetCategory)
 		r.Post("/downloads/{id}/{action}", s.webDownloadAction)
 		r.Get("/settings", s.webSettings)
 		r.Post("/settings/downloads", s.webSettingsDownloads)

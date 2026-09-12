@@ -419,7 +419,7 @@ func (s *Server) webDownloads(w http.ResponseWriter, r *http.Request) {
 	}
 	s.refreshAriaRows(rows)
 	msg, errMsg := popFlash(w, r, "msg"), popFlash(w, r, "err")
-	_ = views.DownloadsPage(s.downloadsPageVMs(rows), msg, errMsg).Render(r.Context(), w)
+	_ = views.DownloadsPage(s.downloadsPageVMs(rows), s.knownCategories(), msg, errMsg).Render(r.Context(), w)
 }
 
 func (s *Server) webDownloadsTable(w http.ResponseWriter, r *http.Request) {
@@ -428,20 +428,29 @@ func (s *Server) webDownloadsTable(w http.ResponseWriter, r *http.Request) {
 		rows = nil
 	}
 	s.refreshAriaRows(rows)
-	_ = views.DownloadsTable(s.downloadsPageVMs(rows)).Render(r.Context(), w)
+	_ = views.DownloadsTable(s.downloadsPageVMs(rows), s.knownCategories()).Render(r.Context(), w)
 }
 
 func (s *Server) webDownloadAdd(w http.ResponseWriter, r *http.Request) {
 	link := strings.TrimSpace(r.FormValue("link"))
 	filename := strings.TrimSpace(r.FormValue("filename"))
+	category := strings.TrimSpace(r.FormValue("category"))
+	if len(category) > 100 {
+		redirectFlash(w, r, "/ui/downloads", "", "category name too long (max 100)")
+		return
+	}
 
-	id, name, err := s.addAnyLink(r.Context(), link, filename, "", "")
+	id, name, err := s.addAnyLink(r.Context(), link, filename, category, "")
 	if err != nil {
 		slog.Warn("add download rejected", "link", link, "err", err)
 		redirectFlash(w, r, "/ui/downloads", "", flashErrText(err))
 		return
 	}
-	slog.Info("download added", "id", id, "name", name)
+	if category != "" {
+		// Register the label so the arrs (and the category picker) see it.
+		qbCategories.set(category, "")
+	}
+	slog.Info("download added", "id", id, "name", name, "category", category)
 	redirectFlash(w, r, "/ui/downloads", "download started: "+name, "")
 }
 
@@ -462,6 +471,54 @@ func documentFilename(doc *tg.Document, fallback string) string {
 		}
 	}
 	return fallback
+}
+
+// webDownloadSetCategory re-labels a download, qBittorrent-style. The label
+// is what Sonarr/Radarr filter on when polling torrents/info?category=, so
+// it must stick in the DB and, for forwarded torrents, on the real client.
+func (s *Server) webDownloadSetCategory(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	category := strings.TrimSpace(r.FormValue("category"))
+	if len(category) > 100 {
+		redirectFlash(w, r, "/ui/downloads", "", "category name too long (max 100)")
+		return
+	}
+
+	row, err := s.dm.Get(id)
+	if err != nil || row == nil {
+		// Not a local row: it may live on the real qBittorrent instance.
+		qb := NewQBitRealClientFromEnv()
+		if !qb.Configured() {
+			redirectFlash(w, r, "/ui/downloads", "", "download not found")
+			return
+		}
+		if err := qb.SetCategory([]string{id}, category); err != nil {
+			slog.Error("remote set category failed", "hash", id, "err", err)
+			redirectFlash(w, r, "/ui/downloads", "", "set category failed")
+			return
+		}
+		redirectFlash(w, r, "/ui/downloads", "category set to "+firstNonEmpty(category, "(none)"), "")
+		return
+	}
+
+	if err := s.downloadRepo.SetCategory(id, category); err != nil {
+		slog.Error("set category failed", "id", id, "err", err)
+		redirectFlash(w, r, "/ui/downloads", "", "set category failed")
+		return
+	}
+	// Keep forwarded torrents labeled on the real client too.
+	if row.Origin == models.OriginExternalQb {
+		if qb := NewQBitRealClientFromEnv(); qb.Configured() {
+			if err := qb.SetCategory([]string{id}, category); err != nil {
+				slog.Error("remote set category failed", "hash", id, "err", err)
+			}
+		}
+	}
+	if category == "" {
+		redirectFlash(w, r, "/ui/downloads", "category cleared", "")
+		return
+	}
+	redirectFlash(w, r, "/ui/downloads", "category set to "+category, "")
 }
 
 func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {

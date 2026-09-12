@@ -134,7 +134,7 @@ templ statePill(state string) {
 	}
 }
 
-templ DownloadsTable(rows []DownloadRowVM) {
+templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 	<div
 		id="downloads-table"
 		hx-get="/ui/downloads/table"
@@ -156,6 +156,7 @@ templ DownloadsTable(rows []DownloadRowVM) {
 							<th class="num">Size</th>
 							<th class="num">Speed</th>
 							<th class="num">ETA</th>
+							<th>Category</th>
 							<th>State</th>
 							<th></th>
 						</tr>
@@ -197,6 +198,28 @@ templ DownloadsTable(rows []DownloadRowVM) {
 										<span class="muted">—</span>
 									}
 								</td>
+								<td data-label="Category" class="cell-category">
+									<details class="cat-edit">
+										<summary>
+											if row.Category != "" {
+												<span class="tag" title="Change category">{ row.Category }</span>
+											} else {
+												<span class="tag tag-muted" title="Change category">no category</span>
+											}
+										</summary>
+										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/category") } class="cat-edit-form">
+											<input type="text" name="category" list={ "cats-" + row.ID } value={ row.Category } placeholder="radarr, sonarr…" maxlength="100" aria-label="Category"/>
+											<datalist id={ "cats-" + row.ID }>
+												for _, cat := range categories {
+													if cat != row.Category {
+														<option value={ cat }></option>
+													}
+												}
+											</datalist>
+											<button type="submit" class="icon-btn" title="Save category" aria-label="Save category">@iconDownload()</button>
+										</form>
+									</details>
+								</td>
 								<td data-label="State" class="cell-state">@statePill(row.State)</td>
 								<td class="actions" data-label="">
 									if row.State == "downloading" || row.State == "queued" {
@@ -223,7 +246,7 @@ templ DownloadsTable(rows []DownloadRowVM) {
 	</div>
 }
 
-templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
+templ DownloadsPage(rows []DownloadRowVM, categories []string, msg string, errMsg string) {
 	@Layout("Tellarr — Downloads", "downloads") {
 		<article>
 			<div class="page-head">
@@ -240,7 +263,7 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 					</div>
 				</div>
 			}
-			@DownloadsTable(rows)
+			@DownloadsTable(rows, categories)
 
 			<dialog id="modal-add-download" class="modal">
 				<div class="modal-frame">
@@ -252,6 +275,15 @@ templ DownloadsPage(rows []DownloadRowVM, msg string, errMsg string) {
 						<label>
 							Link
 							<input type="text" name="link" placeholder="Telegram message, magnet, .torrent, or direct file URL" required/>
+						</label>
+						<label>
+							Category <small class="muted">(e.g. radarr, sonarr — so the arrs track it)</small>
+							<input type="text" name="category" list="known-categories" maxlength="100" autocomplete="off" placeholder="radarr"/>
+							<datalist id="known-categories">
+								for _, cat := range categories {
+									<option value={ cat }></option>
+								}
+							</datalist>
 						</label>
 						<label>
 							Save as filename <small class="muted">(optional)</small>

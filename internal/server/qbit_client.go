@@ -255,3 +255,9 @@ func (q *QBitRealClient) Delete(hashes []string, deleteFiles bool) error {
 	extra := url.Values{"deleteFiles": {fmt.Sprintf("%t", deleteFiles)}}
 	return q.action(strings.Join(hashes, "|"), "/api/v2/torrents/delete", extra)
 }
+
+// SetCategory re-labels torrents on the remote client (empty clears).
+func (q *QBitRealClient) SetCategory(hashes []string, category string) error {
+	extra := url.Values{"category": {category}}
+	return q.action(strings.Join(hashes, "|"), "/api/v2/torrents/setCategory", extra)
+}

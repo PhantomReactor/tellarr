@@ -11,7 +11,7 @@ func TestDownloadsPageRenders(t *testing.T) {
 		{ID: "def", Name: "Movie.mkv", State: "done", Percent: 100, Origin: "qbittorrent"},
 	}
 	var sb strings.Builder
-	if err := DownloadsPage(rows, "download started", "").Render(t.Context(), &sb); err != nil {
+	if err := DownloadsPage(rows, []string{"tv", "radarr"}, "download started", "").Render(t.Context(), &sb); err != nil {
 		t.Fatal(err)
 	}
 	out := sb.String()
@@ -93,7 +93,7 @@ func TestAccountPageRenders(t *testing.T) {
 
 func TestEmptyStatesRender(t *testing.T) {
 	var sb strings.Builder
-	if err := DownloadsPage(nil, "", "").Render(t.Context(), &sb); err != nil {
+	if err := DownloadsPage(nil, nil, "", "").Render(t.Context(), &sb); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(sb.String(), `data-target="downloads-table"`) {

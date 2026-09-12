@@ -1,10 +1,11 @@
 // Copy-to-clipboard helper. Source is either data-copy-text on the button
-// itself or a textarea referenced via data-yml-id. Falls back to
-// select+execCommand on non-HTTPS origins.
+// itself or a textarea referenced via data-yml-id. navigator.clipboard only
+// exists on secure origins (https or localhost), so on plain-http LAN setups
+// every copy must go through a hidden textarea + execCommand fallback.
 function tellarrCopy(btn) {
   var text = btn.getAttribute("data-copy-text");
   var ta = null;
-  if (text === null) {
+  if (text === null || text === "") {
     ta = document.getElementById(btn.getAttribute("data-yml-id"));
     if (!ta) return;
     text = ta.value;
@@ -23,23 +24,39 @@ function tellarrCopy(btn) {
       }, 1500);
     }
   };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done, function () {
-      if (ta) fallbackCopy(ta);
-      done();
-    });
-  } else {
-    if (ta) fallbackCopy(ta);
+  var fallback = function () {
+    // Reuse the visible textarea when there is one; otherwise stage a hidden
+    // one (must be focusable and rendered off-screen, display:none won't copy).
+    var stage = ta;
+    var created = false;
+    if (!stage) {
+      stage = document.createElement("textarea");
+      stage.value = text;
+      stage.setAttribute("readonly", "");
+      stage.style.position = "fixed";
+      stage.style.top = "-9999px";
+      document.body.appendChild(stage);
+      created = true;
+    }
+    var active = document.activeElement;
+    stage.focus();
+    stage.select();
+    try {
+      stage.setSelectionRange(0, text.length);
+    } catch (e) {}
+    var ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (e) {}
+    if (created) document.body.removeChild(stage);
+    if (active && typeof active.focus === "function") active.focus();
     done();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, fallback);
+  } else {
+    fallback();
   }
-}
-
-function fallbackCopy(ta) {
-  ta.focus();
-  ta.select();
-  try {
-    document.execCommand("copy");
-  } catch (e) {}
 }
 
 // --- Accent theme ----------------------------------------------------------------

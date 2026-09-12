@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,6 +65,30 @@ func (st *qbCategoryStore) delete(name string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	delete(st.cats, name)
+}
+
+// knownCategories merges the categories created through the WebUI API with
+// those already attached to download rows (e.g. categories the arrs sent
+// along with torrents/add but never registered via createCategory). The
+// Downloads page uses this to offer a qBittorrent-style category picker.
+func (s *Server) knownCategories() []string {
+	seen := make(map[string]bool)
+	for name := range qbCategories.all() {
+		seen[name] = true
+	}
+	if rows, err := s.downloadRepo.List(); err == nil {
+		for _, row := range rows {
+			if c := strings.TrimSpace(row.Category); c != "" {
+				seen[c] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (st *qbSessionStore) create() string {
