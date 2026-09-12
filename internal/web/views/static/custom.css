@@ -397,6 +397,11 @@ article > h2:first-child { margin-top: 0; }
 
 main.container { max-width: 63rem; }
 
+/* Downloads gets a wide layout: the table has many columns and long names,
+   so let it use nearly the full viewport instead of the 63rem cap. */
+body.page-downloads main.container { max-width: min(96vw, 100rem); }
+body.page-downloads .cell-name { max-width: 46rem; }
+
 /* Boxed variant used by auth pages and anywhere a surface is required */
 .auth-card {
   background: var(--tl-surface);
@@ -770,6 +775,9 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
 }
 
 .cell-name { max-width: 24rem; }
+@media (min-width: 761px) {
+  body.page-downloads .cell-name { max-width: 46rem; }
+}
 .dl-name {
   display: block;
   overflow: hidden;
@@ -805,6 +813,11 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
    chosen from a fixed list — the labels the *arr apps create/expect — never
    free-typed, so downloads always end up with a label the arrs poll for. */
 .cell-category { min-width: 9rem; }
+/* Center the category cell: the tag sits mid-column under the header. */
+.downloads-table td.cell-category { text-align: center; }
+/* Suppress pico's accordion chevron, which floats to the far right of the
+   summary and makes the cell look misaligned. */
+.downloads-table .cat-edit > summary::after { display: none; }
 .cat-edit { display: inline-block; }
 .cat-edit > summary {
   cursor: pointer;

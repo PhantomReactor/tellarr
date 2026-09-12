@@ -23,7 +23,7 @@ templ Layout(title string, active string) {
 			<script src={ "/static/custom.js?v=" + AssetVersion } defer></script>
 			<script>try{var a=localStorage.getItem("tl-accent");if(a)document.documentElement.setAttribute("data-accent",a);}catch(e){}</script>
 		</head>
-		<body>
+		<body class={ templ.KV("page-downloads", active == "downloads") }>
 			<main class="container">
 				<nav>
 					<ul>
