@@ -125,6 +125,16 @@ document.addEventListener("click", function (e) {
   if (d && e.target === d) d.close();
 });
 
+// Category editor: close any open downloads-table <details> editor when
+// clicking anywhere outside it, so the edit view stays up until then.
+document.addEventListener("click", function (e) {
+  if (e.target instanceof Element) {
+    document.querySelectorAll("#downloads-table details.cat-edit[open]").forEach(function (d) {
+      if (!d.contains(e.target)) d.open = false;
+    });
+  }
+});
+
 // Add-to-Prowlarr category picker: "Add to Prowlarr" buttons carry
 // data-channel and a comma-separated data-categories (the channel's
 // currently saved torznabcats keys, defaulting server-side when unset) —

@@ -138,7 +138,7 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 	<div
 		id="downloads-table"
 		hx-get="/ui/downloads/rows"
-		hx-trigger="every 2s [!document.querySelector('dialog[open]') && !(document.activeElement && document.activeElement.tagName === 'SELECT')]"
+		hx-trigger="every 2s [!document.querySelector('dialog[open]') && !(document.activeElement && document.activeElement.tagName === 'SELECT') && !document.querySelector('#downloads-table details[open]')]"
 		hx-swap="outerHTML"
 		hx-target="#downloads-rows"
 	>
