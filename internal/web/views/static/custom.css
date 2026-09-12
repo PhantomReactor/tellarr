@@ -700,6 +700,12 @@ input[readonly]:focus { border-color: var(--tl-border-strong) !important; }
 .downloads-table td,
 .downloads-table th { vertical-align: middle; }
 
+/* Keep the table generous: never shrink it below this width on desktop,
+   content scrolls horizontally instead of cramming columns. */
+@media (min-width: 761px) {
+  .downloads-table { min-width: 72rem; }
+}
+
 table th {
   font-size: 0.72rem;
   font-weight: 600;

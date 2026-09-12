@@ -186,9 +186,28 @@ function applyFilter(tableId) {
 
 // Make htmx swaps work with modals/filters: surface failed requests, open the
 // YAML modal once its content arrives, and reapply active search filters.
+// Preserve horizontal scroll position inside the downloads table across
+// htmx swaps: the every-2s refresh replaces #downloads-table with a fresh
+// element, which would otherwise snap the user back to the left edge while
+// they are scrolled right or dragging the table.
+var downloadsTableScroll = 0;
+
+document.addEventListener("htmx:beforeSwap", function (e) {
+  var t = e.detail && e.detail.target;
+  if (t && t.id === "downloads-table") {
+    var wrap = t.querySelector(".table-wrap");
+    if (wrap) downloadsTableScroll = wrap.scrollLeft;
+  }
+});
+
 document.addEventListener("htmx:afterSwap", function (e) {
   var t = e.detail && e.detail.target;
   if (!t) return;
+  if (t.id === "downloads-table") {
+    var wrap = t.querySelector(".table-wrap");
+    if (wrap && downloadsTableScroll > 0) wrap.scrollLeft = downloadsTableScroll;
+    applyFilter("downloads-table");
+  }
   if (t.id === "yml-viewer" && t.firstElementChild) {
     openModal("modal-yml");
   }
