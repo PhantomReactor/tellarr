@@ -428,7 +428,7 @@ func (s *Server) webDownloadsTable(w http.ResponseWriter, r *http.Request) {
 		rows = nil
 	}
 	s.refreshAriaRows(rows)
-	_ = views.DownloadsTable(s.downloadsPageVMs(rows), s.knownCategories()).Render(r.Context(), w)
+	_ = views.DownloadsRows(s.downloadsPageVMs(rows), s.knownCategories()).Render(r.Context(), w)
 }
 
 func (s *Server) webDownloadAdd(w http.ResponseWriter, r *http.Request) {

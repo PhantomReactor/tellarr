@@ -137,27 +137,40 @@ templ statePill(state string) {
 templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 	<div
 		id="downloads-table"
-		hx-get="/ui/downloads/table"
+		hx-get="/ui/downloads/rows"
 		hx-trigger="every 2s [!document.querySelector('dialog[open]') && !(document.activeElement && document.activeElement.tagName === 'SELECT')]"
 		hx-swap="outerHTML"
 		hx-target="#downloads-rows"
 	>
-		if len(rows) == 0 {
-			<div class="table-wrap">
-				<table class="responsive downloads-table">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>Progress</th>
-							<th class="num">Size</th>
-							<th class="num">Speed</th>
-							<th class="num">ETA</th>
-							<th>Category</th>
-							<th>State</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody id="downloads-rows">
+		<div class="table-wrap">
+			<table class="responsive downloads-table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Progress</th>
+						<th class="num">Size</th>
+						<th class="num">Speed</th>
+						<th class="num">ETA</th>
+						<th>Category</th>
+						<th>State</th>
+						<th></th>
+					</tr>
+				</thead>
+				@DownloadsRows(rows, categories)
+			</table>
+		</div>
+		<div id="downloads-table-noresults" class="empty-state" hidden>
+			@iconSearch()
+			<p>No downloads match your search.</p>
+		</div>
+	</div>
+}
+
+// Fragment swapped by the 2s poll: tbody only, so the scroll container
+// (.table-wrap) is never re-rendered and horizontal scroll is preserved.
+templ DownloadsRows(rows []DownloadRowVM, categories []string) {
+				<tbody id="downloads-rows">
+					if len(rows) == 0 {
 						<tr>
 							<td colspan="8">
 								<div class="empty-state">
@@ -166,29 +179,7 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 								</div>
 							</td>
 						</tr>
-					</tbody>
-				</table>
-			</div>
-			<div id="downloads-table-noresults" class="empty-state" hidden>
-				@iconSearch()
-				<p>No downloads match your search.</p>
-			</div>
-		} else {
-			<div class="table-wrap">
-				<table class="responsive downloads-table">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>Progress</th>
-							<th class="num">Size</th>
-							<th class="num">Speed</th>
-							<th class="num">ETA</th>
-							<th>Category</th>
-							<th>State</th>
-							<th></th>
-						</tr>
-					</thead>
-				<tbody id="downloads-rows">
+					}
 					for _, row := range rows {
 							<tr data-search={ strings.ToLower(row.Name + " " + row.Category + " " + row.Origin + " " + row.State) }>
 								<td data-label="Name" class="cell-name">
@@ -264,15 +255,7 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 								</td>
 							</tr>
 						}
-					</tbody>
-				</table>
-			</div>
-			<div id="downloads-table-noresults" class="empty-state" hidden>
-				@iconSearch()
-				<p>No downloads match your search.</p>
-			</div>
-		}
-	</div>
+				</tbody>
 }
 
 templ DownloadsPage(rows []DownloadRowVM, categories []string, msg string, errMsg string) {

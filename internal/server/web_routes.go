@@ -56,6 +56,7 @@ func (s *Server) RegisterWebRoutes(r chi.Router) {
 		r.Get("/indexers/prowlarr/yml/view", s.webIndexerProwlarrYMLView)
 		r.Get("/downloads", s.webDownloads)
 		r.Get("/downloads/table", s.webDownloadsTable)
+		r.Get("/downloads/rows", s.webDownloadsTable)
 		r.Post("/downloads/add", s.webDownloadAdd)
 		r.Post("/downloads/{id}/category", s.webDownloadSetCategory)
 		r.Post("/downloads/{id}/{action}", s.webDownloadAction)
