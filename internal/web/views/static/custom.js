@@ -51,8 +51,7 @@ function tellarrCopy(btn) {
     if (created) document.body.removeChild(stage);
     if (active && typeof active.focus === "function") active.focus();
     done();
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+  };  if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
     navigator.clipboard.writeText(text).then(done, fallback);
   } else {
     fallback();

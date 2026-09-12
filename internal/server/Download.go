@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 	"tellarr/internal/database"
 	db "tellarr/internal/database/models"
 )
@@ -219,7 +219,7 @@ func (dm *DownloadManager) Start(ctx context.Context, api *tg.Client, doc *tg.Do
 	dm.live[id] = live
 	dm.mu.Unlock()
 
-	if err := dm.openTransfer(ctx, row, live, api, doc); err != nil {
+	if err := dm.openTransfer(ctx, row, live, api, doc, 0); err != nil {
 		dm.releaseSlot()
 		cancel()
 		dm.mu.Lock()
@@ -234,18 +234,40 @@ func (dm *DownloadManager) Start(ctx context.Context, api *tg.Client, doc *tg.Do
 
 // openTransfer creates the output file and spawns the transfer goroutine.
 // The caller must have registered live in dm.live and hold a slot.
-func (dm *DownloadManager) openTransfer(ctx context.Context, row *db.TorrentDownload, live *liveDownload, api *tg.Client, doc *tg.Document) error {
-	file, err := os.Create(dm.path(row.Filename))
-	if err != nil {
-		return err
+// resumeFrom > 0 continues the transfer at that byte offset: the file is
+// opened without truncation and the chunk loop starts there.
+func (dm *DownloadManager) openTransfer(ctx context.Context, row *db.TorrentDownload, live *liveDownload, api *tg.Client, doc *tg.Document, resumeFrom int64) error {
+	var file *os.File
+	var err error
+	if resumeFrom > 0 {
+		file, err = os.OpenFile(dm.path(row.Filename), os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		// Trust the bytes actually on disk over the persisted counter: if the
+		// file is shorter than Written, clamp so we never write a hole.
+		if st, statErr := file.Stat(); statErr == nil && st.Size() < resumeFrom {
+			resumeFrom = st.Size()
+		}
+	} else {
+		file, err = os.Create(dm.path(row.Filename))
+		if err != nil {
+			return err
+		}
 	}
-	go dm.runTransfer(ctx, file, row, live, api, doc)
+	live.written.Store(resumeFrom)
+	go dm.runTransfer(ctx, file, row, live, api, doc, resumeFrom)
 	return nil
 }
 
 // runTransfer drives one active download and returns its slot to the queue
 // when it ends, whatever the reason.
-func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *db.TorrentDownload, live *liveDownload, api *tg.Client, doc *tg.Document) {
+// The transfer is sequential (one 1 MiB getFile per round-trip) instead of
+// gotd's parallel reader so that written bytes form a contiguous prefix:
+// that makes resume-after-failure exact — we simply continue at the stored
+// offset, no holes to figure out. Per-chunk retries absorb the pooled
+// connection churn ("engine was closed") that used to abort the transfer.
+func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *db.TorrentDownload, live *liveDownload, api *tg.Client, doc *tg.Document, resumeFrom int64) {
 	id := row.ID
 	defer func() {
 		live.cancel()
@@ -257,37 +279,96 @@ func (dm *DownloadManager) runTransfer(ctx context.Context, file *os.File, row *
 	}()
 	defer file.Close()
 
-	d := downloader.NewDownloader().WithPartSize(downloadPartSize)
-	writer := &progressWriter{id: id, live: live, w: file, dm: dm}
-	_, dlErr := d.Download(api, &tg.InputDocumentFileLocation{
+	location := &tg.InputDocumentFileLocation{
 		ID:            doc.ID,
 		AccessHash:    doc.AccessHash,
 		FileReference: doc.FileReference,
-	}).WithThreads(bestThreads(doc.Size, maxDownloadThreads)).Parallel(ctx, writer)
-
-	written := live.written.Load()
-	switch {
-	case written >= doc.Size:
-		dlErr = nil
-		if err := dm.repo.UpdateProgress(id, written, db.StateDone, ""); err != nil {
-			slog.Error("failed to finalize download", "id", id, "err", err)
-		}
-	case errors.Is(dlErr, context.Canceled):
-		// paused by user or superseded
-		if err := dm.repo.UpdateProgress(id, written, db.StatePaused, ""); err != nil {
-			slog.Error("failed to finalize download", "id", id, "err", err)
-		}
-	case dlErr != nil:
-		slog.Error("download failed", "id", id, "err", dlErr)
-		if err := dm.repo.UpdateProgress(id, written, db.StateError, dlErr.Error()); err != nil {
-			slog.Error("failed to finalize download", "id", id, "err", err)
-		}
-	default:
-		// ended cleanly but incomplete (interrupted)
-		if err := dm.repo.UpdateProgress(id, written, db.StatePaused, ""); err != nil {
-			slog.Error("failed to finalize download", "id", id, "err", err)
-		}
 	}
+	total := doc.Size
+	chunk := make([]byte, 0, downloadPartSize)
+
+	for offset := resumeFrom; offset < total; {
+		n, err := fetchChunk(ctx, api, location, offset, chunk)
+		if err != nil {
+			written := live.written.Load()
+			switch {
+			case errors.Is(err, context.Canceled):
+				// paused by user or superseded
+				if err = dm.repo.UpdateProgress(id, written, db.StatePaused, ""); err != nil {
+					slog.Error("failed to finalize download", "id", id, "err", err)
+				}
+			default:
+				slog.Error("download failed", "id", id, "err", err)
+				if err = dm.repo.UpdateProgress(id, written, db.StateError, err.Error()); err != nil {
+					slog.Error("failed to finalize download", "id", id, "err", err)
+				}
+			}
+			return
+		}
+		if n < 1 {
+			break // Telegram reported end of file
+		}
+		if _, err := file.WriteAt(chunk[:n], offset); err != nil {
+			slog.Error("download write failed", "id", id, "err", err)
+			_ = dm.repo.UpdateProgress(id, live.written.Load(), db.StateError, "disk write: "+err.Error())
+			return
+		}
+		offset += int64(n)
+		live.written.Store(offset)
+		dm.maybeFlush(id)
+	}
+
+	if err := dm.repo.UpdateProgress(id, live.written.Load(), db.StateDone, ""); err != nil {
+		slog.Error("failed to finalize download", "id", id, "err", err)
+	}
+}
+
+// fetchChunk downloads one chunk at offset with bounded retries on transient
+// pooled-connection errors (engine closed, conn dead, EOF, flood wait...).
+func fetchChunk(ctx context.Context, api *tg.Client, location *tg.InputDocumentFileLocation, offset int64, buf []byte) (int, error) {
+	var lastErr error
+	for attempt := 0; attempt < 10; attempt++ {
+		if attempt > 0 {
+			delay := min(time.Duration(attempt)*time.Second, 10*time.Second)
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		req := &tg.UploadGetFileRequest{
+			Location: location,
+			Offset:   offset,
+			Limit:    downloadPartSize,
+		}
+		r, err := api.UploadGetFile(ctx, req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return 0, ctx.Err()
+			}
+			if wait, ok := tgerr.AsFloodWait(err); ok {
+				lastErr = err
+				if wait <= 0 {
+					wait = 1
+				}
+				slog.Warn("telegram flood wait between chunks", "offset", offset, "attempt", attempt+1, "wait", wait)
+				select {
+				case <-ctx.Done():
+					return 0, ctx.Err()
+				case <-time.After(time.Duration(wait) * time.Second):
+				}
+				continue
+			}
+			lastErr = err
+			continue
+		}
+		if data, ok := r.(*tg.UploadFile); ok {
+			n := copy(buf, data.Bytes)
+			return n, nil
+		}
+		return 0, fmt.Errorf("unexpected getFile response %T", r)
+	}
+	return 0, lastErr
 }
 
 // releaseSlot frees one transfer slot. Callers should follow with pump().
@@ -353,7 +434,7 @@ func (dm *DownloadManager) promote(item db.TorrentDownload) {
 	_ = dm.repo.SetState(item.ID, db.StateDownloading)
 	slog.Info("download started from queue", "id", item.ID, "name", row.Filename)
 
-	if err := dm.openTransfer(ctx, row, live, api, doc); err != nil {
+	if err := dm.openTransfer(ctx, row, live, api, doc, 0); err != nil {
 		slog.Error("queued download failed to start", "id", item.ID, "err", err)
 		cancel()
 		dm.mu.Lock()
@@ -479,6 +560,10 @@ func (dm *DownloadManager) FileExists(row *db.TorrentDownload) bool {
 // the transfer again (used for resume-after-restart and pause/resume).
 // aria2-backed rows are resumed through the RPC instead. Full slots put the
 // row back into the queue rather than starting it immediately.
+// Telegram rows with partial data on disk continue from the stored offset —
+// no restart from zero — as long as the partial file still exists and is at
+// least as large as the persisted Written counter (the transfer is written
+// sequentially, so that offset is a contiguous frontier).
 func (s *Server) RestartDownload(row *db.TorrentDownload) (*db.TorrentDownload, error) {
 	if row.Origin == db.OriginAria2 {
 		return s.restartExternalDownload(row)
@@ -487,7 +572,56 @@ func (s *Server) RestartDownload(row *db.TorrentDownload) (*db.TorrentDownload, 
 	if err != nil {
 		return nil, err
 	}
-	return s.dm.Start(context.Background(), api, doc, row.SessionId, row.DialogId, row.MessageId, row.Filename, row.Category, row.SavePath)
+
+	resumeFrom := int64(0)
+	if row.Written > 0 && row.Written < doc.Size && s.dm.FileExists(row) {
+		resumeFrom = row.Written
+	}
+	if resumeFrom == 0 && row.Written >= doc.Size && row.State == db.StateDone {
+		// completed file restarted: clean slate
+		return s.dm.Start(context.Background(), api, doc, row.SessionId, row.DialogId, row.MessageId, row.Filename, row.Category, row.SavePath)
+	}
+
+	id := SyntheticHash(row.DialogId, row.MessageId, row.Filename)
+	existing, err := s.dm.repo.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && (existing.State == db.StateDownloading || existing.State == db.StateQueued) {
+		return existing, nil
+	}
+
+	queued := !s.dm.slots.tryAcquire()
+	state := db.StateDownloading
+	if queued {
+		state = db.StateQueued
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	live := &liveDownload{cancel: cancel, total: doc.Size}
+	s.dm.mu.Lock()
+	s.dm.live[id] = live
+	s.dm.mu.Unlock()
+	_ = s.dm.repo.UpdateProgress(id, row.Written, state, "")
+	if queued {
+		s.dm.queue = append(s.dm.queue, *row)
+		s.dm.mu.Unlock()
+		slog.Info("download queued", "id", id, "name", row.Filename)
+		return row, nil
+	}
+	_ = row
+	s.dm.mu.Unlock()
+	if err := s.dm.openTransfer(ctx, row, live, api, doc, resumeFrom); err != nil {
+		s.dm.releaseSlot()
+		cancel()
+		s.dm.mu.Lock()
+		delete(s.dm.live, id)
+		s.dm.mu.Unlock()
+		_ = s.dm.repo.UpdateProgress(id, row.Written, db.StateError, err.Error())
+		s.dm.pump()
+		return nil, err
+	}
+	slog.Info("download resumed", "id", id, "name", row.Filename, "offset", resumeFrom)
+	return row, nil
 }
 
 // resolveDownloadMedia fetches a fresh document handle plus a download API
