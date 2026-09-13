@@ -119,6 +119,10 @@ templ iconX() {
 	<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
 }
 
+templ iconChevron() {
+	<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+}
+
 // --- badges ---
 
 templ statePill(state string) {
@@ -142,7 +146,7 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 	<div
 		id="downloads-table"
 		hx-get="/ui/downloads/rows"
-		hx-trigger="every 2s [!document.querySelector('dialog[open]') && !(document.activeElement && document.activeElement.tagName === 'SELECT') && !document.querySelector('#downloads-table details[open]')]"
+		hx-trigger="every 2s [!document.querySelector('dialog[open]') && !(document.activeElement && document.activeElement.tagName === 'SELECT') && !document.querySelector('#downloads-table details[open]') && !document.querySelector('#downloads-table tr.row-open')]"
 		hx-swap="outerHTML"
 		hx-target="#downloads-rows"
 	>
@@ -209,7 +213,7 @@ templ DownloadsRows(rows []DownloadRowVM, categories []string) {
 											<button type="submit" class="icon-btn" title="Save category" aria-label="Save category">@iconDownload()</button>
 										</form>
 									</details>
-									<span class="tag tag-muted">{ row.Origin }</span>
+									<span class="tag tag-muted tag-origin">{ row.Origin }</span>
 									if row.Error != "" {
 										<small class="dl-error">{ row.Error }</small>
 									}
@@ -240,6 +244,7 @@ templ DownloadsRows(rows []DownloadRowVM, categories []string) {
 								</td>
 								<td data-label="State" class="cell-state">@statePill(row.State)</td>
 								<td class="actions" data-label="">
+									<button type="button" class="icon-btn row-expand" title="Details" aria-label="Toggle details" onclick="toggleRowExpand(this)">@iconChevron()</button>
 									if row.State == "downloading" || row.State == "queued" {
 										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/pause") } class="inline-form">
 											<button type="submit" class="icon-btn" title="Pause" aria-label="Pause">@iconPause()</button>

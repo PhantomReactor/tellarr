@@ -134,6 +134,13 @@ document.addEventListener("click", function (e) {
   }
 });
 
+// Mobile row expand: chevron toggles the extra detail cells (size, speed,
+// ETA) on a downloads row. The 2s poll pauses while a row is open.
+function toggleRowExpand(btn) {
+  var tr = btn.closest("tr");
+  if (tr) tr.classList.toggle("row-open");
+}
+
 // Add-to-Prowlarr category picker: "Add to Prowlarr" buttons carry
 // data-channel and a comma-separated data-categories (the channel's
 // currently saved torznabcats keys, defaulting server-side when unset) —

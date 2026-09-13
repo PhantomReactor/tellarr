@@ -1332,6 +1332,40 @@ td, th { overflow-wrap: anywhere; }
   }
 }
 
+/* --- Downloads: minimal rows on mobile -------------------------------------- */
+/* Collapsed: name, progress, category tag, state pill, actions. Size/speed/
+   ETA and the origin tag hide behind the chevron (tr.row-open) — the 2s poll
+   pauses while a row is expanded. */
+.row-expand { display: none; }
+
+@media (max-width: 720px) {
+  .row-expand { display: inline-flex; }
+  .downloads-table tr.row-open .row-expand svg { transform: rotate(180deg); }
+  .row-expand svg { transition: transform 0.15s ease; }
+
+  /* size / speed / ETA only appear when the row is expanded */
+  table.responsive.downloads-table td.cell-stats { display: none; }
+  table.responsive.downloads-table tr.row-open td.cell-stats { display: inline-flex; }
+  /* "—" placeholders stay hidden even when expanded */
+  table.responsive.downloads-table td.cell-stats.cell-empty { display: none; }
+
+  /* origin tag is noise on mobile; the category is what matters */
+  table.responsive.downloads-table .tag-origin { display: none; }
+
+  /* a full bar at 100% says "done" on its own */
+  table.responsive.downloads-table .pill-done { display: none; }
+
+  /* clamp long names to two lines */
+  table.responsive.downloads-table .dl-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+
+  table.responsive.downloads-table tr { padding: 0.7rem 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
