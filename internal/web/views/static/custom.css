@@ -1319,17 +1319,14 @@ td, th { overflow-wrap: anywhere; }
   table.responsive.downloads-table td.actions { display: none; }
 
   table.responsive.downloads-table tr.row-open .cat-edit { display: inline-block; }
-  table.responsive.downloads-table tr.row-open td.cell-stats { display: inline-flex; align-items: baseline; gap: 0.4rem; }
+  table.responsive.downloads-table tr.row-open td.cell-stats { display: inline-flex; align-items: baseline; gap: 0.5rem; }
   table.responsive.downloads-table tr.row-open td.cell-state { display: block; }
   table.responsive.downloads-table tr.row-open td.actions { display: flex; }
-  table.responsive.downloads-table tr.row-open td.cell-stats::before {
-    content: attr(data-label);
-    font-size: 0.64rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--tl-muted);
-  }
+  /* no SIZE/SPEED/ETA labels on mobile — the values read on their own */
+  table.responsive.downloads-table tr.row-open td.cell-stats::before { content: none; }
+  /* consistent look across the detail line: same size/color for all values */
+  table.responsive.downloads-table tr.row-open td.cell-stats > * { font-size: 0.8rem; color: var(--tl-text); }
+  table.responsive.downloads-table tr.row-open td.cell-stats .muted { color: var(--tl-muted); }
 
   /* "—" placeholders stay hidden even when expanded */
   table.responsive.downloads-table td.cell-stats.cell-empty { display: none; }
