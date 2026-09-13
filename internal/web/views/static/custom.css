@@ -807,21 +807,16 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
 }
 
 /* --- Per-row category editor (Downloads table) ------------------------------- */
-/* qBittorrent-style category relabeling: the tag in the Category column is a
-   <details> trigger; opening it swaps the tag for a one-line form (select of
+/* qBittorrent-style category relabeling: the category tag next to the name is
+   a <details> trigger; opening it swaps the tag for a one-line form (select of
    known categories + save button, auto-submitting on change). Categories are
    chosen from a fixed list — the labels the *arr apps create/expect — never
    free-typed, so downloads always end up with a label the arrs poll for. */
-.cell-category { min-width: 9rem; }
-/* Center the category cell: the tag sits mid-column under the header.
-   pico's accordion chevron (a floated ::after on the summary) invisibly
-   widens the summary and drags the tag left of center, so kill it hard. */
-.downloads-table td.cell-category,
+/* Center the state cell: the pill sits mid-column under the header. */
 .downloads-table td.cell-state { text-align: center; }
-/* The category badge must line up with the state pill: the shared .tag rule
-   adds margin-top that the .pill doesn't have, so normalize it here and give
-   both the same effective vertical size. */
-.downloads-table .cell-category .tag { margin-top: 0; padding: 0.18rem 0.55rem; font-size: 0.72rem; }
+/* The editor lives inline in the Name cell, so drop the block/centering
+   behavior the standalone column used and let it flow with the other tags. */
+.cell-name .cat-edit { display: inline-block; width: fit-content; margin: 0; }
 .downloads-table .cat-edit > summary::after {
   content: none !important;
   display: none !important;

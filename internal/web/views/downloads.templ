@@ -155,7 +155,6 @@ templ DownloadsTable(rows []DownloadRowVM, categories []string) {
 						<th class="num">Size</th>
 						<th class="num">Speed</th>
 						<th class="num">ETA</th>
-						<th>Category</th>
 						<th>State</th>
 						<th></th>
 					</tr>
@@ -176,7 +175,7 @@ templ DownloadsRows(rows []DownloadRowVM, categories []string) {
 				<tbody id="downloads-rows">
 					if len(rows) == 0 {
 						<tr>
-							<td colspan="8">
+							<td colspan="7">
 								<div class="empty-state">
 									@iconDownload()
 									<p>No downloads yet.</p>
@@ -188,9 +187,28 @@ templ DownloadsRows(rows []DownloadRowVM, categories []string) {
 							<tr data-search={ strings.ToLower(row.Name + " " + row.Category + " " + row.Origin + " " + row.State) }>
 								<td data-label="Name" class="cell-name">
 									<span class="dl-name" title={ row.Name }>{ row.Name }</span>
-									if row.Category != "" {
-										<span class="tag">{ row.Category }</span>
-									}
+									<details class="cat-edit">
+										<summary>
+											if row.Category != "" {
+												<span class="tag" title="Change category">{ row.Category }</span>
+											} else {
+												<span class="tag tag-muted" title="Change category">no category</span>
+											}
+										</summary>
+										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/category") } class="cat-edit-form">
+											<select name="category" onchange="this.form.submit()" aria-label="Category">
+												<option value="">no category</option>
+												for _, cat := range categories {
+													if cat == row.Category {
+														<option value={ cat } selected>{ cat }</option>
+													} else {
+														<option value={ cat }>{ cat }</option>
+													}
+												}
+											</select>
+											<button type="submit" class="icon-btn" title="Save category" aria-label="Save category">@iconDownload()</button>
+										</form>
+									</details>
 									<span class="tag tag-muted">{ row.Origin }</span>
 									if row.Error != "" {
 										<small class="dl-error">{ row.Error }</small>
@@ -219,30 +237,6 @@ templ DownloadsRows(rows []DownloadRowVM, categories []string) {
 									} else {
 										<span class="muted">—</span>
 									}
-								</td>
-								<td data-label="Category" class="cell-category">
-									<details class="cat-edit">
-										<summary>
-											if row.Category != "" {
-												<span class="tag" title="Change category">{ row.Category }</span>
-											} else {
-												<span class="tag tag-muted" title="Change category">no category</span>
-											}
-										</summary>
-										<form method="post" action={ templ.URL("/ui/downloads/" + row.ID + "/category") } class="cat-edit-form">
-											<select name="category" onchange="this.form.submit()" aria-label="Category">
-												<option value="">no category</option>
-												for _, cat := range categories {
-													if cat == row.Category {
-														<option value={ cat } selected>{ cat }</option>
-													} else {
-														<option value={ cat }>{ cat }</option>
-													}
-												}
-											</select>
-											<button type="submit" class="icon-btn" title="Save category" aria-label="Save category">@iconDownload()</button>
-										</form>
-									</details>
 								</td>
 								<td data-label="State" class="cell-state">@statePill(row.State)</td>
 								<td class="actions" data-label="">
