@@ -1286,7 +1286,7 @@ td, th { overflow-wrap: anywhere; }
     align-items: center;
     column-gap: 1.1rem;
     row-gap: 0.45rem;
-    padding: 0.85rem 0;
+    padding: 0.7rem 0;
   }
   table.responsive.downloads-table td {
     display: block;
@@ -1305,55 +1305,43 @@ td, th { overflow-wrap: anywhere; }
     min-width: 0;
     margin-left: 0;
   }
+}
 
-  /* size / speed / eta collapse into one inline meta line */
-  table.responsive.downloads-table td.cell-stats {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.4rem;
-  }
-  table.responsive.downloads-table td.cell-stats::before {
+/* --- Downloads: minimal collapsible rows on mobile ---------------------------- */
+/* Collapsed: just the name and its progress bar. Everything else — category,
+   size, speed, ETA, state, actions — lives behind a tap anywhere on the row
+   (tr.row-open). The 2s poll pauses while a row is expanded. */
+@media (max-width: 720px) {
+  /* hide everything but name + progress until the row is tapped open */
+  table.responsive.downloads-table .cat-edit,
+  table.responsive.downloads-table td.cell-stats,
+  table.responsive.downloads-table td.cell-state,
+  table.responsive.downloads-table td.actions { display: none; }
+
+  table.responsive.downloads-table tr.row-open .cat-edit { display: inline-block; }
+  table.responsive.downloads-table tr.row-open td.cell-stats { display: inline-flex; align-items: baseline; gap: 0.4rem; }
+  table.responsive.downloads-table tr.row-open td.cell-state { display: block; }
+  table.responsive.downloads-table tr.row-open td.actions { display: flex; }
+  table.responsive.downloads-table tr.row-open td.cell-stats::before {
     content: attr(data-label);
-    min-width: 0;
     font-size: 0.64rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--tl-muted);
   }
-  /* "—" placeholder cells are noise on mobile — drop them */
-  table.responsive.downloads-table td.cell-stats.cell-empty { display: none; }
 
-  /* state pill + row actions share the last line, right-aligned */
-  table.responsive.downloads-table td.cell-state,
-  table.responsive.downloads-table td.actions {
-    margin-left: auto;
-    padding-top: 0;
-  }
-}
-
-/* --- Downloads: minimal rows on mobile -------------------------------------- */
-/* Collapsed: name, progress, category tag, state pill, actions. Size/speed/
-   ETA and the origin tag hide behind the chevron (tr.row-open) — the 2s poll
-   pauses while a row is expanded. */
-.row-expand { display: none; }
-
-@media (max-width: 720px) {
-  .row-expand { display: inline-flex; }
-  .downloads-table tr.row-open .row-expand svg { transform: rotate(180deg); }
-  .row-expand svg { transition: transform 0.15s ease; }
-
-  /* size / speed / ETA only appear when the row is expanded */
-  table.responsive.downloads-table td.cell-stats { display: none; }
-  table.responsive.downloads-table tr.row-open td.cell-stats { display: inline-flex; }
   /* "—" placeholders stay hidden even when expanded */
   table.responsive.downloads-table td.cell-stats.cell-empty { display: none; }
 
-  /* origin tag is noise on mobile; the category is what matters */
-  table.responsive.downloads-table .tag-origin { display: none; }
+  /* expanded layout: details stack left-aligned, actions on their own line */
+  table.responsive.downloads-table tr.row-open { row-gap: 0.55rem; }
+  table.responsive.downloads-table tr.row-open td.cell-state { text-align: left; }
+  table.responsive.downloads-table tr.row-open td.actions { justify-content: flex-start; gap: 0.5rem; }
 
-  /* a full bar at 100% says "done" on its own */
-  table.responsive.downloads-table .pill-done { display: none; }
+  /* tap affordance */
+  table.responsive.downloads-table tr { cursor: pointer; }
+  table.responsive.downloads-table tr.row-open { cursor: default; }
 
   /* clamp long names to two lines */
   table.responsive.downloads-table .dl-name {
@@ -1362,8 +1350,6 @@ td, th { overflow-wrap: anywhere; }
     -webkit-line-clamp: 2;
     overflow: hidden;
   }
-
-  table.responsive.downloads-table tr { padding: 0.7rem 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

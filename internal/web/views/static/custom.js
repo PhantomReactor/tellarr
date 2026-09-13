@@ -134,12 +134,21 @@ document.addEventListener("click", function (e) {
   }
 });
 
-// Mobile row expand: chevron toggles the extra detail cells (size, speed,
-// ETA) on a downloads row. The 2s poll pauses while a row is open.
-function toggleRowExpand(btn) {
-  var tr = btn.closest("tr");
+// Mobile row expand: tapping anywhere on a downloads row toggles its detail
+// cells (category, size, speed, ETA, state, actions). Taps on interactive
+// elements inside the row are ignored. The 2s poll pauses while open.
+function toggleRowExpand(tr) {
   if (tr) tr.classList.toggle("row-open");
 }
+
+document.addEventListener("click", function (e) {
+  if (!(e.target instanceof Element)) return;
+  if (window.matchMedia("(min-width: 721px)").matches) return;
+  var tr = e.target.closest("#downloads-table tr");
+  if (!tr) return;
+  if (e.target.closest("button, a, select, input, summary, label, form")) return;
+  toggleRowExpand(tr);
+});
 
 // Add-to-Prowlarr category picker: "Add to Prowlarr" buttons carry
 // data-channel and a comma-separated data-categories (the channel's
