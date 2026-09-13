@@ -207,11 +207,7 @@ func (s *Server) webIndexerToggle(w http.ResponseWriter, r *http.Request) {
 		redirectFlash(w, r, "/ui/indexers", "", "update failed")
 		return
 	}
-	state := "disabled"
-	if dialog.Indexer {
-		state = "enabled"
-	}
-	redirectFlash(w, r, "/ui/indexers", name+" "+state, "")
+	redirectFlash(w, r, "/ui/indexers", "", "")
 }
 
 // indexerFeedURL builds the torznab feed URL for a channel using the first
@@ -451,7 +447,7 @@ func (s *Server) webDownloadAdd(w http.ResponseWriter, r *http.Request) {
 		qbCategories.set(category, "")
 	}
 	slog.Info("download added", "id", id, "name", name, "category", category)
-	redirectFlash(w, r, "/ui/downloads", "download started: "+name, "")
+	redirectFlash(w, r, "/ui/downloads", "", "")
 }
 
 // flashErrText trims an error for display in the redirect flash message.
@@ -497,7 +493,7 @@ func (s *Server) webDownloadSetCategory(w http.ResponseWriter, r *http.Request) 
 			redirectFlash(w, r, "/ui/downloads", "", "set category failed")
 			return
 		}
-		redirectFlash(w, r, "/ui/downloads", "category set to "+firstNonEmpty(category, "(none)"), "")
+		redirectFlash(w, r, "/ui/downloads", "", "")
 		return
 	}
 
@@ -514,11 +510,7 @@ func (s *Server) webDownloadSetCategory(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
-	if category == "" {
-		redirectFlash(w, r, "/ui/downloads", "category cleared", "")
-		return
-	}
-	redirectFlash(w, r, "/ui/downloads", "category set to "+category, "")
+	redirectFlash(w, r, "/ui/downloads", "", "")
 }
 
 func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
@@ -533,7 +525,7 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg, errMsg string
+	var errMsg string
 	switch action {
 	case "pause":
 		if row.Origin == models.OriginAria2 && row.RemoteGid != "" {
@@ -551,18 +543,13 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 				errMsg = "pause failed"
 			} else {
 				_ = s.downloadRepo.SetState(id, models.StatePaused)
-				msg = "paused"
 			}
 		} else if err := s.dm.Pause(id); err != nil {
 			errMsg = "pause failed"
-		} else {
-			msg = "paused"
 		}
 	case "resume":
 		if _, err := s.RestartDownload(row); err != nil {
 			errMsg = "resume failed: telegram session may be offline"
-		} else {
-			msg = "resumed"
 		}
 	case "restart":
 		// Discard partial data and start the transfer over from zero. Any
@@ -588,8 +575,6 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := s.RestartDownload(row); err != nil {
 			errMsg = "restart failed: telegram session may be offline"
-		} else {
-			msg = "restarted from the beginning"
 		}
 	case "delete", "delete-files":
 		delFiles := action == "delete-files"
@@ -614,15 +599,11 @@ func (s *Server) webDownloadAction(w http.ResponseWriter, r *http.Request) {
 		if derr != nil {
 			slog.Error("delete failed", "id", id, "err", derr)
 			errMsg = "delete failed"
-		} else if delFiles {
-			msg = "download deleted with files"
-		} else {
-			msg = "record removed"
 		}
 	default:
 		errMsg = "unknown action"
 	}
-	redirectFlash(w, r, "/ui/downloads", msg, errMsg)
+	redirectFlash(w, r, "/ui/downloads", "", errMsg)
 }
 
 // webRemoteDownloadAction applies pause/resume/delete to a torrent on the
@@ -634,20 +615,15 @@ func (s *Server) webRemoteDownloadAction(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var err error
-	okMsg := ""
 	switch action {
 	case "pause":
 		err = qb.Pause([]string{id})
-		okMsg = "paused"
 	case "resume":
 		err = qb.Resume([]string{id})
-		okMsg = "resumed"
 	case "delete":
 		err = qb.Delete([]string{id}, false)
-		okMsg = "record removed"
 	case "delete-files":
 		err = qb.Delete([]string{id}, true)
-		okMsg = "download deleted with files"
 	default:
 		redirectFlash(w, r, "/ui/downloads", "", "unknown action")
 		return
@@ -657,7 +633,7 @@ func (s *Server) webRemoteDownloadAction(w http.ResponseWriter, r *http.Request,
 		redirectFlash(w, r, "/ui/downloads", "", action+" failed")
 		return
 	}
-	redirectFlash(w, r, "/ui/downloads", okMsg, "")
+	redirectFlash(w, r, "/ui/downloads", "", "")
 }
 
 func (s *Server) baseURL() string {
@@ -723,7 +699,7 @@ func (s *Server) webSettingsDownloads(w http.ResponseWriter, r *http.Request) {
 	s.dm.SetMaxParallel(n)
 	s.dm.pump()
 	slog.Info("max parallel downloads updated", "value", n)
-	redirectFlash(w, r, "/ui/settings", fmt.Sprintf("max parallel downloads set to %d", n), "")
+	redirectFlash(w, r, "/ui/settings", "", "")
 }
 
 func (s *Server) webTokenCreate(w http.ResponseWriter, r *http.Request) {
@@ -746,7 +722,7 @@ func (s *Server) webTokenCreate(w http.ResponseWriter, r *http.Request) {
 		redirectFlash(w, r, "/ui/settings", "", "could not save token")
 		return
 	}
-	redirectFlash(w, r, "/ui/settings", "created key: "+val, "")
+	redirectFlash(w, r, "/ui/settings", "", "")
 }
 
 func (s *Server) webTokenDelete(w http.ResponseWriter, r *http.Request) {
@@ -759,7 +735,7 @@ func (s *Server) webTokenDelete(w http.ResponseWriter, r *http.Request) {
 		redirectFlash(w, r, "/ui/settings", "", "delete failed")
 		return
 	}
-	redirectFlash(w, r, "/ui/settings", "key deleted", "")
+	redirectFlash(w, r, "/ui/settings", "", "")
 }
 
 func (s *Server) webQBitTest(w http.ResponseWriter, r *http.Request) {
