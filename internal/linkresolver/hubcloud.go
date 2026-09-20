@@ -54,6 +54,23 @@ func resolveHubCloud(ctx context.Context, client *http.Client, rawURL string) (*
 			"Referer": dlPage.FinalURL,
 		},
 	}
+	// HubCloud mirrors a mix of genuine file URLs and interstitial relays
+	// that 403 or serve an HTML hand-off page to non-browser clients like
+	// aria2. When probing verifies the top pick really is a file, trust
+	// the probe's filename and size; the browser UA alone (added by
+	// Resolve) has been enough for the verified hosts, so drop the
+	// Referer claim rather than forwarding a header the file host may
+	// reject.
+	if probed, p := pickProbed(ctx, cands); probed != nil {
+		res.URL = probed.url
+		if p.Filename != "" {
+			res.Filename = sanitizeFilename(p.Filename)
+		}
+		if p.Size > 0 {
+			res.Size = p.Size
+		}
+		res.Headers = nil
+	}
 	filenameForResult(res, page.Body)
 	if res.Filename == "" && best.label != "" && !strings.Contains(best.label, "http") {
 		res.Filename = sanitizeFilename(best.label)

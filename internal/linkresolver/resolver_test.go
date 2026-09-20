@@ -263,3 +263,51 @@ func TestPickBestSkipsTelegram(t *testing.T) {
 		t.Fatalf("wrong best: %+v", best)
 	}
 }
+
+// A relay interstitial (fastdl style): the candidate URL is an HTML
+// hand-off page that embeds the real file URL in its own ?url= query
+// parameter. The probe must drill in and surface the real file URL,
+// filename and size -- handing the raw relay URL to aria2 reproduces the
+// historical status=403 failure.
+func TestResolveGDFlixInterstitialRelay(t *testing.T) {
+	t.Setenv("GDFLIX_HOSTS", "127.0.0.1")
+	var realURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/fastdl", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte("<title>Instant DL Page</title><a id='vd'>Download</a>"))
+	})
+	mux.HandleFunc("/real/The.Real.Show.S01E01.1080p.WEB-DL.H.264-HiQ.mkv", func(w http.ResponseWriter, r *http.Request) {
+		realURL = "http://" + r.Host + "/real/The.Real.Show.S01E01.1080p.WEB-DL.H.264-HiQ.mkv?tok=1"
+		w.Header().Set("Content-Type", "video/mkv")
+		w.Header().Set("Content-Disposition", `attachment; filename="The.Real.Show.S01E01.1080p.WEB-DL.H.264-HiQ.mkv"`)
+		w.Header().Set("Content-Length", "123456789")
+		w.Write([]byte("MKV"))
+	})
+	mux.HandleFunc("/file/show", func(w http.ResponseWriter, r *http.Request) {
+		if realURL == "" {
+			// First hit (before any probe): guess the real URL directly;
+			// the handler fills it in on the later request through /fastdl.
+			realURL = srvURL + "/real/The.Real.Show.S01E01.1080p.WEB-DL.H.264-HiQ.mkv?tok=1"
+		}
+		w.Write([]byte(`<html><head><title>GDFlix | Show.S01E01.1080p.mkv</title></head><body>
+<a href="` + srvURL + `/fastdl?url=` + realURL + `">Instant DL [10GBPS]</a></body></html>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	srvURL = srv.URL
+
+	res, err := Resolve(context.Background(), srv.URL+"/file/show")
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
+	if !strings.Contains(res.URL, "The.Real.Show.S01E01.1080p.WEB-DL.H.264-HiQ.mkv") {
+		t.Fatalf("expected drilled real file URL, got %.200s", res.URL)
+	}
+	if res.Filename != "The.Real.Show.S01E01.1080p.WEB-DL.H.264-HiQ.mkv" {
+		t.Fatalf("unexpected filename %q", res.Filename)
+	}
+	if res.Size != 123456789 {
+		t.Fatalf("unexpected size %d", res.Size)
+	}
+}

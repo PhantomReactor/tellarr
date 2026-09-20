@@ -70,13 +70,24 @@ func resolveGDFlix(ctx context.Context, client *http.Client, rawURL string) (*Re
 	if best == nil {
 		return nil, fmt.Errorf("no direct links found")
 	}
-	res := &Result{
-		URL:  best.url,
-		Size: best.size,
-		Headers: map[string]string{
-			"Referer": landing.FinalURL,
-		},
+
+	// GDFlix "Instant DL"-style anchors point at tokenized relays whose
+	// response is an HTML hand-off page (and 403 for non-browser clients
+	// like aria2) instead of the file. Verify the top picks with a real
+	// probe and reject anything that answers as HTML; the probe also
+	// recovers the true filename, size and any redirect chains the
+	// resolver cannot follow statically.
+	res := &Result{URL: best.url, Size: best.size}
+	if probed, p := pickProbed(ctx, cands); probed != nil {
+		res.URL, res.Size = probed.url, probed.size
+		if p.Size > 0 {
+			res.Size = p.Size
+		}
+		if p.Filename != "" {
+			res.Filename = sanitizeFilename(p.Filename)
+		}
 	}
+
 	filenameForResult(res, landing.Body)
 	if res.Filename == "" && best.label != "" && !strings.Contains(best.label, "http") {
 		res.Filename = sanitizeFilename(best.label)
