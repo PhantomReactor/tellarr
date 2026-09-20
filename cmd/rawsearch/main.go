@@ -24,19 +24,32 @@ func main() {
 	dialogName := flag.String("dialog", "", "channel/dialog name as stored in tellarr DB")
 	query := flag.String("q", "", "search text")
 	msgId := flag.Int64("msg", 0, "fetch one raw message by id instead of searching")
-	sessionId := flag.Int64("session", -1, "session id (defaults to first active)")
+	sessionId := flag.Int64("session", -1, "session id (defaults to first active, then first any)")
+	dbPath := flag.String("db", "", "sqlite DB path override (else DB_URL from env)")
 	limit := flag.Int("limit", 50, "search limit")
 	flag.Parse()
 
-	db := database.New()
+	var db database.Service
+	if *dbPath != "" {
+		db = database.OpenPath(*dbPath)
+	} else {
+		db = database.New()
+	}
 	sessionRepo := database.NewSessionRepository(db.DB)
 	dialogRepo := database.NewDialogsRepository(db.DB)
 
 	sid := *sessionId
 	if sid < 0 {
 		ids, err := sessionRepo.GetAllSessionIds()
-		if err != nil || len(ids) == 0 {
-			fmt.Fprintln(os.Stderr, "no active sessions:", err)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "session lookup error:", err)
+		}
+		if len(ids) == 0 {
+			// fall back to any session row, active or not
+			_ = db.DB.Select(&ids, "select id from sessions")
+		}
+		if len(ids) == 0 {
+			fmt.Fprintln(os.Stderr, "no sessions found in DB at all")
 			os.Exit(1)
 		}
 		sid = ids[0]

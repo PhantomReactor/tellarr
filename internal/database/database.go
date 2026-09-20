@@ -61,6 +61,17 @@ func New() Service {
 	return *dbInstance
 }
 
+// OpenPath opens a sqlite DB at an explicit path (debug tooling only);
+// migrations are run the same way as New.
+func OpenPath(path string) Service {
+	db, err := sqlx.Open("sqlite3", path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	runMigrations(db)
+	return Service{DB: db}
+}
+
 // Health checks the health of the database connection by pinging the database.
 // It returns a map with keys indicating various health statistics.
 func (s *Service) Health() map[string]string {
